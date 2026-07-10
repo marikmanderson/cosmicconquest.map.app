@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cosmic Conquest — Osiris Command Atlas</title>
+  <meta name="description" content="Interactive campaign command map for the Osiris System." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app-shell" class="app-shell">
+    <header class="topbar glass-panel">
+      <div class="brand-block">
+        <div class="brand-sigil" aria-hidden="true"><img src="assets/gar-logo.png" alt="" /></div>
+        <div>
+          <p class="eyebrow">Cosmic Conquest</p>
+          <h1>Osiris Command Atlas</h1>
+        </div>
+      </div>
+
+      <nav class="view-tabs" aria-label="Map views">
+        <button class="tab-button active" data-view="system">System View</button>
+        <button class="tab-button" data-view="planet">Planet Theater</button>
+        <button class="tab-button" data-view="admin">Admin Console</button>
+      </nav>
+
+      <div class="settings-block">
+        <button id="settingsBtn" class="settings-button" type="button" aria-label="Open settings">⚙</button>
+        <div id="settingsMenu" class="settings-menu hidden" role="dialog" aria-label="Atlas settings">
+          <div class="settings-menu-header">
+            <div>
+              <p class="eyebrow">Settings</p>
+              <h2>Atlas Controls</h2>
+            </div>
+            <button id="settingsCloseBtn" class="dialog-close" type="button" aria-label="Close settings">×</button>
+          </div>
+          <label><input type="checkbox" id="disableSatellites" /> Disable satellites</label>
+          <label><input type="checkbox" id="disableSatelliteNames" /> Disable satellite names</label>
+          <label><input type="checkbox" id="disableNames" /> Disable names</label>
+          <label><input type="checkbox" id="disablePois" /> Disable POIs</label>
+          <label><input type="checkbox" id="disablePoiIcons" /> Disable POI icons</label>
+          <label><input type="checkbox" id="disablePoiRendering" /> Disable POI rendering</label>
+          <label id="showHiddenSettingsWrap" class="hidden"><input type="checkbox" id="showHiddenSettings" /> Hidden Intel</label>
+          <div class="settings-filter-block">
+            <strong>Show only POIs</strong>
+            <div id="poiTypeFilterSettings" class="settings-checklist"></div>
+          </div>
+          <div class="mode-buttons" role="group" aria-label="Access mode">
+            <button id="viewerModeBtn" class="mini-button" type="button" data-mode="viewer">Default Mode</button>
+            <button id="commandModeBtn" class="mini-button" type="button" data-mode="command">Command Mode</button>
+            <button id="adminModeBtn" class="mini-button" type="button" data-mode="admin">Admin Mode</button>
+            <button id="rootModeBtn" class="mini-button" type="button" data-mode="root">Root Mode</button>
+          </div>
+          <p id="modeReadout" class="settings-readout">Current mode: Viewer</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout-grid">
+      <section class="map-stage glass-panel">
+        <div id="systemView" class="view-panel active-view">
+          <canvas id="systemCanvas" width="1280" height="780" aria-label="Animated Osiris System map"></canvas>
+          <div id="hoverCard" class="hover-card hidden"></div>
+          <div class="map-controls">
+            <button id="pauseOrbitBtn" class="ghost-button">Pause Orbits</button>
+            <button id="resetViewBtn" class="ghost-button">Reset Camera</button>
+            <button id="toggleIntelBtn" class="ghost-button">Intel Layer</button>
+            <span class="control-hint">Wheel zoom · drag/right-drag pan</span>
+          </div>
+        </div>
+
+        <div id="planetView" class="view-panel">
+          <div class="planet-toolbar">
+            <div>
+              <p class="eyebrow">Planetary Theater</p>
+              <h2 id="planetTitle">Select a body</h2>
+            </div>
+            <div class="planet-camera-tools">
+              <div class="planet-selector-wrap">
+                <label for="planetSelect">Theater</label>
+                <select id="planetSelect"></select>
+              </div>
+              <button id="planetZoomOutBtn" class="mini-button" type="button">Zoom -</button>
+              <button id="planetZoomInBtn" class="mini-button" type="button">Zoom +</button>
+              <button id="planetFitBtn" class="mini-button" type="button">Fit</button>
+              <div class="planet-mode-toggle" role="group" aria-label="Planet theater mode">
+                <button id="planetFlatModeBtn" class="mini-button" type="button">Flat Map</button>
+                <button id="planetGlobeModeBtn" class="mini-button" type="button">Globe View</button>
+              </div>
+              <span id="planetModeHint" class="planet-control-hint">Wheel zoom · drag pan · click/right-click POI</span>
+            </div>
+          </div>
+          <div class="planet-stage-grid">
+            <canvas id="planetCanvas" width="960" height="610" aria-label="Planetary surface and tactical POI map"></canvas>
+            <aside class="surface-legend">
+              <label id="showHiddenWrap" class="hidden"><input type="checkbox" id="showHidden" /> Hidden Intel</label>
+              <label id="placementModeWrap" class="hidden"><input type="checkbox" id="placementMode" /> Placement Mode</label>
+              <div class="placement-readout hidden" id="placementReadout">Click map or globe to capture coordinates.</div>
+              <div id="quickPoiTools" class="quick-poi-tools hidden">
+                <h3>Admin Quick Tools</h3>
+                <p>Middle-click open map territory to quick-create a POI. Right-click an existing POI to quick-edit, open full edit, or delete.</p>
+              </div>
+              <div class="body-intel-card">
+                <h3>World Information</h3>
+                <div id="bodyIntel" class="body-intel-list"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="adminView" class="view-panel admin-view">
+          <div class="admin-grid">
+            <section class="admin-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Command</p>
+                  <h2>Faction Registry</h2>
+                </div>
+              </div>
+              <form id="factionForm" class="stacked-form">
+                <input type="hidden" id="factionId" />
+                <label>Name<input id="factionName" placeholder="Example: Republic Loyalist Cells" /></label>
+                <label>Short Code<input id="factionCode" placeholder="rlc" /></label>
+                <label>Color<input id="factionColor" type="color" value="#58a6ff" /></label>
+                <button class="primary-button" type="submit">Save Faction</button>
+              </form>
+              <div id="factionList" class="record-list"></div>
+            </section>
+
+            <section class="admin-card wide-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Strategic Board</p>
+                  <h2>POI Editor</h2>
+                </div>
+              </div>
+              <form id="poiForm" class="poi-form">
+                <p class="full-field form-note">War effort uses <strong>Strategic Value</strong> for faction control calculations and sector bonuses. <strong>Tactical Value</strong> is for event/scenario importance and does not currently alter war effort unless the Game Master team chooses to interpret it manually.</p>
+                <input type="hidden" id="poiId" />
+                <label>Name<input id="poiName" placeholder="Example: Aurek-9 Listening Post" required /></label>
+                <label>Body<select id="poiBody"></select></label>
+                <label>Type<select id="poiType"></select></label>
+                <label>Subtype<input id="poiSubtype" placeholder="OP, CP, Mine, City, Ruin..." /></label>
+                <label>POI Icon<select id="poiModel"></select><span id="poiIconPreview" class="icon-preview">◇</span></label>
+                <label id="poiOwnerLabel">Owner<select id="poiOwner"></select></label>
+                <label id="poiColorLabel" class="hidden">Icon Color<input id="poiColor" type="color" value="#c7d2e0" /></label>
+                <label>Visibility<select id="poiVisibility"></select></label>
+                <label>Strategic Tier<select id="poiStrategicTier"></select></label>
+                <label id="poiStrategicValueLabel">Strategic Value<input id="poiStrategic" type="number" step="0.25" min="0" value="1" /></label>
+                <label>Tactical Value<input id="poiTactical" type="number" step="0.25" min="0" value="0" /></label>
+                <label>Display Size<input id="poiDisplaySize" type="number" step="0.05" min="0.25" max="3" value="1" /></label>
+                <label>X Coordinate<input id="poiX" type="number" step="0.01" min="0" max="1" value="0.5" /></label>
+                <label>Y Coordinate<input id="poiY" type="number" step="0.01" min="0" max="1" value="0.5" /></label>
+                <label class="full-field">Strategic Paragraph / Briefing Text<textarea id="poiDescription" rows="4" placeholder="Shown when players or staff click this point, if visibility permits."></textarea></label>
+                <label class="full-field">GM-Only Notes<textarea id="poiGmNotes" rows="3" placeholder="Hidden details, reveal conditions, event hooks."></textarea></label>
+                <div class="form-actions full-field">
+                  <button class="primary-button" type="submit">Save POI</button>
+                  <button class="ghost-button" type="button" id="newPoiBtn">New POI</button>
+                  <button class="danger-button" type="button" id="deletePoiBtn">Delete POI</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="admin-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Celestial</p>
+                  <h2>Add Moon</h2>
+                </div>
+              </div>
+              <form id="moonForm" class="stacked-form">
+                <label>Name<input id="moonName" placeholder="Example: Vulkan II" /></label>
+                <label>Parent Planet<select id="moonParent"></select></label>
+                <label class="full-field">Moon Texture Upload<input id="moonTexture" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+                <p class="form-note">Texture spec: 2:1 equirectangular PNG/JPG/WebP. Preferred master size: 8192×4096. Lower sizes work, but will look softer in Globe View.</p>
+                <label>Orbit Distance<input id="moonOrbit" type="number" step="1" value="26" /></label>
+                <label>Strategic Weight<input id="moonWeight" type="number" step="1" value="6" /></label>
+                <button class="primary-button" type="submit">Add Moon</button>
+              </form>
+            </section>
+
+
+
+            <section class="admin-card wide-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Celestial</p>
+                  <h2>Celestial Bodies Editor</h2>
+                </div>
+              </div>
+              <form id="bodyForm" class="poi-form">
+                <label class="full-field">Body<select id="bodyEditSelect"></select></label>
+                <label>Name<input id="bodyEditName" placeholder="Example: Brekka" /></label>
+                <label>Visual Size<input id="bodyEditRadius" type="number" step="0.5" min="1" value="30" /></label>
+                <label>Orbit Distance / Spacing<input id="bodyEditOrbitRadius" type="number" step="1" min="1" value="300" /></label>
+                <label>Orbit Speed<input id="bodyEditOrbitSpeed" type="number" step="0.000001" min="0" value="0.000020" /></label>
+                <label>Strategic Weight<input id="bodyEditWeight" type="number" step="1" min="0" value="1" /></label>
+                <label class="full-field">Status Label<input id="bodyEditStatus" placeholder="Example: Pacification Zone" /></label>
+                <div class="full-field body-editor-satellite-list">
+                  <strong>Linked Satellites</strong>
+                  <div id="bodyEditSatellites" class="selected-info">Automatically listed from linked moons and orbital stations.</div>
+                </div>
+                <label>Diameter<input id="bodyEditDiameter" placeholder="Example: 12,742 km" /></label>
+                <label>Atmosphere<input id="bodyEditAtmosphere" placeholder="Example: Breathable, marginal, restricted, or hazardous" /></label>
+                <label>Rotation Period<input id="bodyEditRotationPeriod" placeholder="Example: 28 standard hours" /></label>
+                <label>Orbital Period<input id="bodyEditOrbitalPeriod" placeholder="Example: 412 standard days" /></label>
+                <label class="full-field">Climate<textarea id="bodyEditClimate" rows="2" placeholder="One per line or comma-separated. Example: arid deserts, toxic storms"></textarea></label>
+                <label class="full-field">Terrain<textarea id="bodyEditTerrain" rows="2" placeholder="One per line or comma-separated. Example: dunes, salt flats, canyon belts"></textarea></label>
+                <label class="full-field">Native Species<textarea id="bodyEditNativeSpecies" rows="2" placeholder="One per line or comma-separated."></textarea></label>
+                <label class="full-field">Languages<textarea id="bodyEditLanguages" rows="2" placeholder="One per line or comma-separated."></textarea></label>
+                <label class="full-field">Government<textarea id="bodyEditGovernment" rows="2" placeholder="One per line or comma-separated."></textarea></label>
+                <label>Population<input id="bodyEditPopulation" placeholder="Example: 8.4 billion" /></label>
+                <label>Major Imports<input id="bodyEditMajorImports" placeholder="Example: bacta, reactor parts" /></label>
+                <label>Major Exports<input id="bodyEditMajorExports" placeholder="Example: tibanna, ores" /></label>
+                <p class="full-field form-note">For planets, orbit distance/speed controls spacing and movement around Osiris. For moons and satellite stations, it controls spacing and movement around the parent planet.</p>
+                <div class="form-actions full-field">
+                  <button class="primary-button" type="submit">Save Body Settings</button>
+                </div>
+              </form>
+            </section>
+
+            
+            <section id="passwordToolsCard" class="admin-card wide-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Root</p>
+                  <h2>Mode Passwords</h2>
+                </div>
+              </div>
+              <form id="passwordForm" class="poi-form">
+                <label>Command Password<input id="commandPasswordInput" type="password" autocomplete="new-password" /></label>
+                <label>Admin Password<input id="adminPasswordInput" type="password" autocomplete="new-password" /></label>
+                <label>Root Password<input id="rootPasswordInput" type="password" autocomplete="new-password" /></label>
+                <p class="full-field form-note">Root mode has master privileges. Passwords are stored locally in this browser for the prototype build.</p>
+                <div class="form-actions full-field">
+                  <button class="primary-button" type="submit">Save Passwords</button>
+                </div>
+              </form>
+            </section>
+
+            <section id="dataToolsCard" class="admin-card wide-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Data</p>
+                  <h2>Import / Export</h2>
+                </div>
+              </div>
+              <div class="data-tools">
+                <button id="exportDataBtn" class="primary-button">Export JSON</button>
+                <label class="file-drop">Import JSON<input id="importDataInput" type="file" accept="application/json" /></label>
+                <button id="resetDataBtn" class="danger-button">Reset Seed Data</button>
+              </div>
+              <textarea id="jsonOutput" class="json-output" rows="10" placeholder="Exported data appears here."></textarea>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <aside class="right-rail">
+        <section class="glass-panel control-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Live Calculation</p>
+              <h2>System Control</h2>
+            </div>
+            <span id="controlModePill" class="status-pill">Public Intel</span>
+          </div>
+          <div id="systemControlBars" class="control-bars"></div>
+          <div class="calculation-note" id="calculationNote"></div>
+        </section>
+
+        <section class="glass-panel info-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Selected Asset</p>
+              <h2 id="selectedTitle">Nothing selected</h2>
+            </div>
+          </div>
+          <div id="selectedInfo" class="selected-info">
+            Click a planet, moon, station, or point of interest to inspect its strategic briefing.
+          </div>
+        </section>
+        <div id="poiList" class="hidden" aria-hidden="true"></div>
+</aside>
+    </main>
+  </div>
+
+
+  <div id="quickPoiMenu" class="quick-poi-menu hidden" role="menu"></div>
+
+  <div id="quickPoiEditor" class="quick-poi-editor hidden" role="dialog" aria-label="Quick POI editor">
+    <div class="quick-poi-header">
+      <div>
+        <p class="eyebrow" id="quickPoiEyebrow">Quick POI</p>
+        <h2 id="quickPoiTitle">Create POI</h2>
+      </div>
+      <button id="quickPoiCloseBtn" class="dialog-close" aria-label="Close quick editor">×</button>
+    </div>
+    <form id="quickPoiForm" class="quick-poi-form">
+      <input type="hidden" id="quickPoiId" />
+      <input type="hidden" id="quickPoiBody" />
+      <input type="hidden" id="quickPoiX" />
+      <input type="hidden" id="quickPoiY" />
+      <label>Name<input id="quickPoiName" placeholder="Example: Checkpoint Dorn" required /></label>
+      <label>Type<select id="quickPoiType"></select></label>
+      <label>Icon<select id="quickPoiIcon"></select><span id="quickPoiIconPreview" class="icon-preview">◇</span></label>
+      <label id="quickPoiOwnerLabel">Owner<select id="quickPoiOwner"></select></label>
+      <label id="quickPoiColorLabel" class="hidden">Icon Color<input id="quickPoiColor" type="color" value="#c7d2e0" /></label>
+      <label>Visibility<select id="quickPoiVisibility"></select></label>
+      <label>Strategic Tier<select id="quickPoiStrategicTier"></select></label>
+      <label id="quickPoiStrategicValueLabel">Strategic Value<input id="quickPoiStrategic" type="number" min="0" step="0.25" value="1" /></label>
+      <label>Tactical Value<input id="quickPoiTactical" type="number" min="0" step="0.25" value="0" /></label>
+      <label>Display Size<input id="quickPoiDisplaySize" type="number" min="0.25" max="3" step="0.05" value="1" /></label>
+      <label class="full-field">Briefing Text<textarea id="quickPoiDescription" rows="3" placeholder="Optional GM/player briefing paragraph."></textarea></label>
+      <div class="form-actions full-field">
+        <button class="primary-button" type="submit">Save POI</button>
+        <button class="ghost-button" type="button" id="quickPoiFullEditBtn">Full Edit</button>
+        <button class="danger-button" type="button" id="quickPoiDeleteBtn">Delete</button>
+      </div>
+    </form>
+  </div>
+
+  <dialog id="detailDialog" class="detail-dialog">
+    <button id="closeDialogBtn" class="dialog-close" aria-label="Close">×</button>
+    <p id="dialogEyebrow" class="eyebrow">Asset</p>
+    <h2 id="dialogTitle">Title</h2>
+    <div id="dialogBody"></div>
+  </dialog>
+
+  <script src="data/seed-data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

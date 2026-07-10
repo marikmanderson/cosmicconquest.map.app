@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Atlas Smoke Test</title></head>
+<body style="font-family:monospace;background:#07101b;color:#dff;padding:20px">
+<h1>Cosmic Conquest Atlas v0.1.9 Smoke Test</h1>
+<pre id="out">Loading...</pre>
+<script src="data/seed-data.js"></script>
+<script>
+const out = document.getElementById('out');
+const bodies = window.CC_SEED_DATA.bodies.filter(b => ['planet','moon'].includes(b.type)).map(b => b.name).join('\n - ');
+out.textContent = 'Seed data loaded. Theater bodies:\n - ' + bodies + '\n\nSeeded POIs: ' + window.CC_SEED_DATA.pois.length + '\nSeeded terrain: ' + window.CC_SEED_DATA.terrain.length + '\n\nOpen index.html to test full canvas rendering.';
+</script></body></html>
