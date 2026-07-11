@@ -1280,3 +1280,93 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
 .account-assignment-row small { color:var(--muted); }
 @media (max-width: 1280px) { .logistics-grid { grid-template-columns:1fr 1.3fr; } .logistics-info-panel { grid-column:1 / -1; } }
 @media (max-width: 900px) { .logistics-grid, .logistics-admin-grid { grid-template-columns:1fr; } .compact-form, .two-column-form { grid-template-columns:1fr; } .account-assignment-row, .configuration-row { grid-template-columns:1fr; } }
+
+
+/* v0.4.2 celestial body description + Waystation control editor */
+.body-control-override {
+  padding: 13px;
+  border: 1px solid rgba(109,247,255,.24);
+  border-radius: 14px;
+  background: rgba(4, 18, 31, .72);
+}
+.body-control-override-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.body-control-override-heading strong {
+  display: block;
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: .76rem;
+}
+.body-control-override-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+  max-width: 760px;
+}
+.body-control-override .toggle-label {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--text);
+}
+.body-control-override .toggle-label input {
+  width: auto;
+}
+.body-control-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 9px;
+}
+.body-control-fields.disabled {
+  opacity: .48;
+}
+.body-control-faction-row {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(145,203,255,.14);
+  border-radius: 11px;
+  background: rgba(2, 11, 22, .66);
+}
+.body-control-faction-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.body-control-faction-row i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: 0 0 9px currentColor;
+}
+.body-control-percent-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.body-control-percent-input input {
+  width: 82px;
+  text-align: right;
+}
+.body-control-total {
+  margin-top: 10px;
+  text-align: right;
+  color: var(--muted);
+  font-weight: 700;
+}
+.body-control-total.valid { color: #7dffb2; }
+.body-control-total.invalid { color: #ff9a7d; }
+@media (max-width: 700px) {
+  .body-control-override-heading { flex-direction: column; }
+}

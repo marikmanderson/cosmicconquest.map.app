@@ -164,7 +164,12 @@
     bodyEditOrbitRadius: document.getElementById("bodyEditOrbitRadius"),
     bodyEditOrbitSpeed: document.getElementById("bodyEditOrbitSpeed"),
     bodyEditWeight: document.getElementById("bodyEditWeight"),
+    bodyEditDescription: document.getElementById("bodyEditDescription"),
     bodyEditStatus: document.getElementById("bodyEditStatus"),
+    bodyEditControlOverrideSection: document.getElementById("bodyEditControlOverrideSection"),
+    bodyEditControlOverride: document.getElementById("bodyEditControlOverride"),
+    bodyEditControlFields: document.getElementById("bodyEditControlFields"),
+    bodyEditControlTotal: document.getElementById("bodyEditControlTotal"),
     bodyEditSatellites: document.getElementById("bodyEditSatellites"),
     bodyEditDiameter: document.getElementById("bodyEditDiameter"),
     bodyEditAtmosphere: document.getElementById("bodyEditAtmosphere"),
@@ -344,7 +349,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.1-prototype";
+    clone.meta.version = "0.4.2-prototype";
     clone.visibilityStates = deepClone(seed.visibilityStates);
     clone.poiTypes = deepClone(seed.poiTypes);
     clone.modelTemplates = deepClone(seed.modelTemplates);
@@ -668,6 +673,8 @@
     els.bodyForm?.addEventListener("submit", onBodySubmit);
     els.deleteBodyBtn?.addEventListener("click", onDeleteBody);
     els.bodyEditSelect?.addEventListener("change", () => loadBodyIntoForm(els.bodyEditSelect.value));
+    els.bodyEditControlOverride?.addEventListener("change", updateBodyControlOverrideAvailability);
+    els.bodyEditControlFields?.addEventListener("input", updateBodyControlOverrideTotal);
     els.exportDataBtn.addEventListener("click", onExportData);
     els.importDataInput.addEventListener("change", onImportData);
     els.resetDataBtn.addEventListener("click", onResetData);
@@ -1394,13 +1401,17 @@ function updatePlanetViewUi() {
   }
 
   function drawStation(ctx, body, x, y, r) {
+    const control = calculateBodyControl(body.id, currentIntelIsActual());
+    const dominant = dominantFaction(control.scores);
+    const factionColor = dominant ? factionById(dominant.id).color : null;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate((state.animationTime * 0.00008 + (body.orbitOffset || 0)) % (Math.PI * 2));
-    ctx.shadowColor = "rgba(174, 222, 255, .45)";
+    ctx.shadowColor = factionColor || "rgba(174, 222, 255, .45)";
     ctx.shadowBlur = body.id === state.selectedBodyId ? 18 : 8;
-    ctx.strokeStyle = body.id === state.selectedBodyId ? "rgba(109,247,255,.95)" : "rgba(225, 239, 255, .64)";
-    ctx.fillStyle = "rgba(180, 200, 220, .30)";
+    ctx.strokeStyle = body.id === state.selectedBodyId ? "rgba(109,247,255,.95)" : (factionColor || "rgba(225, 239, 255, .64)");
+    ctx.globalAlpha = factionColor ? .72 : 1;
+    ctx.fillStyle = factionColor || "rgba(180, 200, 220, .30)";
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.rect(-r * .65, -r * .65, r * 1.3, r * 1.3);
@@ -1414,7 +1425,8 @@ function updatePlanetViewUi() {
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(0, 0, r * .34, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(231, 242, 255, .68)";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = factionColor || "rgba(231, 242, 255, .68)";
     ctx.fill();
     ctx.restore();
   }
@@ -3114,7 +3126,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function calculateSystemControl(actual = false) {
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
     let total = 0;
-    const pois = state.data.pois.filter(poi => actual || canSeeForPublic(poi));
+    const overriddenBodies = new Set(state.data.bodies.filter(body => manualBodyControl(body)).map(body => body.id));
+    const pois = state.data.pois.filter(poi => !overriddenBodies.has(poi.bodyId) && (actual || canSeeForPublic(poi)));
     for (const poi of pois) {
       const val = Number(poi.strategicValue || 0);
       scores[poi.factionId] = (scores[poi.factionId] || 0) + val;
@@ -3124,10 +3137,22 @@ function roundRectPath(ctx, x, y, w, h, r) {
       scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
       total += bonus.value;
     }
+    for (const body of state.data.bodies) {
+      const manual = manualBodyControl(body);
+      if (!manual) continue;
+      for (const faction of state.data.factions) {
+        scores[faction.id] = (scores[faction.id] || 0) + Number(manual.scores[faction.id] || 0);
+      }
+      total += manual.total;
+    }
     return { scores, total };
   }
 
   function calculateBodyControl(bodyId, actual = false) {
+    const body = bodyById(bodyId);
+    const manual = manualBodyControl(body);
+    if (manual) return manual;
+
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
     let total = 0;
     const pois = state.data.pois.filter(poi => poi.bodyId === bodyId && (actual || canSeeForPublic(poi)));
@@ -3139,6 +3164,16 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const bonus of calculateSectorBonuses(actual).filter(b => b.bodyId === bodyId)) {
       scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
       total += bonus.value;
+    }
+
+    // Manually controlled Waystations contribute their Strategic Weight to their parent body.
+    for (const child of state.data.bodies.filter(item => item.parentBodyId === bodyId)) {
+      const childManual = manualBodyControl(child);
+      if (!childManual) continue;
+      for (const faction of state.data.factions) {
+        scores[faction.id] = (scores[faction.id] || 0) + Number(childManual.scores[faction.id] || 0);
+      }
+      total += childManual.total;
     }
     return { scores, total };
   }
@@ -3181,10 +3216,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function factionBreakdownHtml(control) {
     if (!control.total) return `<p><strong>Control:</strong> No strategic value assigned yet.</p>`;
-    return `<div class="meta-grid">${state.data.factions.map(faction => {
-      const value = control.scores[faction.id] || 0;
+    const manualNote = control.manual ? `<p><strong>Control Source:</strong> Manual Waystation override.</p>` : "";
+    return `${manualNote}<div class="meta-grid">${state.data.factions.map(faction => {
+      const value = Number(control.scores[faction.id] || 0);
       const pct = value / control.total * 100;
-      return `<div class="meta-card"><strong style="color:${faction.color}">${escapeHtml(faction.code)}</strong>${formatPercent(pct)} / ${value} pts</div>`;
+      const displayValue = Number.isInteger(value) ? value : Math.round(value * 100) / 100;
+      return `<div class="meta-card"><strong style="color:${faction.color}">${escapeHtml(faction.code)}</strong>${formatPercent(pct)} / ${displayValue} pts</div>`;
     }).join("")}</div>`;
   }
 
@@ -3812,6 +3849,80 @@ function roundRectPath(ctx, x, y, w, h, r) {
     flashMessage(`Deleted ${body.name}${childCount ? ` and ${childCount} linked child satellite${childCount === 1 ? "" : "s"}` : ""}.`);
   }
 
+  function isWaystationBody(body) {
+    return Boolean(body && body.type === "station" && body.parentBodyId === "rantel-cluster");
+  }
+
+  function manualBodyControl(body) {
+    if (!isWaystationBody(body) || body.controlOverride?.enabled !== true) return null;
+    const scores = Object.fromEntries(state.data.factions.map(faction => [faction.id, 0]));
+    const weight = Math.max(0, Number(body.strategicWeight || 0));
+    const percentages = body.controlOverride?.percentages || {};
+    let percentTotal = 0;
+    for (const faction of state.data.factions) {
+      const pct = clamp(Number(percentages[faction.id] || 0), 0, 100);
+      percentTotal += pct;
+      scores[faction.id] = weight * pct / 100;
+    }
+    if (percentTotal <= 0) return null;
+    return { scores, total: weight, manual: true };
+  }
+
+  function bodyControlOverrideValuesFromForm() {
+    const percentages = {};
+    let total = 0;
+    els.bodyEditControlFields?.querySelectorAll("[data-body-control-faction]").forEach(input => {
+      const value = clamp(Number(input.value || 0), 0, 100);
+      percentages[input.dataset.bodyControlFaction] = value;
+      total += value;
+    });
+    return { percentages, total };
+  }
+
+  function updateBodyControlOverrideTotal() {
+    if (!els.bodyEditControlTotal) return;
+    const { total } = bodyControlOverrideValuesFromForm();
+    const rounded = Math.round(total * 10) / 10;
+    const enabled = Boolean(els.bodyEditControlOverride?.checked);
+    if (!enabled) {
+      els.bodyEditControlTotal.textContent = `Override disabled · saved allocation total: ${rounded}%`;
+      els.bodyEditControlTotal.classList.remove("valid", "invalid");
+      return;
+    }
+    els.bodyEditControlTotal.textContent = `Total: ${rounded}%${Math.abs(total - 100) <= 0.05 ? " ✓" : " — must equal 100%"}`;
+    els.bodyEditControlTotal.classList.toggle("valid", Math.abs(total - 100) <= 0.05);
+    els.bodyEditControlTotal.classList.toggle("invalid", Math.abs(total - 100) > 0.05);
+  }
+
+  function updateBodyControlOverrideAvailability() {
+    const enabled = Boolean(els.bodyEditControlOverride?.checked);
+    els.bodyEditControlFields?.querySelectorAll("input").forEach(input => { input.disabled = !enabled; });
+    els.bodyEditControlFields?.classList.toggle("disabled", !enabled);
+    updateBodyControlOverrideTotal();
+  }
+
+  function renderBodyControlOverrideEditor(body) {
+    if (!els.bodyEditControlOverrideSection || !els.bodyEditControlFields || !els.bodyEditControlOverride) return;
+    const eligible = isWaystationBody(body);
+    els.bodyEditControlOverrideSection.classList.toggle("hidden", !eligible);
+    if (!eligible) {
+      els.bodyEditControlOverride.checked = false;
+      els.bodyEditControlFields.innerHTML = "";
+      if (els.bodyEditControlTotal) els.bodyEditControlTotal.textContent = "Total: 0%";
+      return;
+    }
+
+    const percentages = body.controlOverride?.percentages || {};
+    els.bodyEditControlOverride.checked = body.controlOverride?.enabled === true;
+    els.bodyEditControlFields.innerHTML = state.data.factions.map(faction => `
+      <label class="body-control-faction-row">
+        <span><i style="background:${faction.color}"></i>${escapeHtml(faction.name)}</span>
+        <span class="body-control-percent-input"><input type="number" min="0" max="100" step="0.1" value="${Number(percentages[faction.id] || 0)}" data-body-control-faction="${escapeHtml(faction.id)}" />%</span>
+      </label>
+    `).join("");
+    updateBodyControlOverrideAvailability();
+  }
+
   function bodyUsesPrimarySystemOrbit(body) {
     return Boolean(body && (
       !body.parentBodyId
@@ -3836,7 +3947,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.bodyEditOrbitRadius.value = Number(orbitRadius);
     els.bodyEditOrbitSpeed.value = Number(orbitSpeed);
     els.bodyEditWeight.value = Number(body.strategicWeight || 0);
+    if (els.bodyEditDescription) els.bodyEditDescription.value = body.description || "";
     els.bodyEditStatus.value = body.statusLabel || "";
+    renderBodyControlOverrideEditor(body);
     const lore = normalizeBodyLore(body.lore || {});
     const sats = satellitesForBody(body.id).map(sat => sat.name).join(", ") || "None registered";
     if (els.bodyEditSatellites) els.bodyEditSatellites.textContent = sats;
@@ -3876,7 +3989,20 @@ function roundRectPath(ctx, x, y, w, h, r) {
       body.moonOrbitSpeed = orbitSpeed;
     }
     body.strategicWeight = Math.max(0, Number(els.bodyEditWeight.value || 0));
+    body.description = els.bodyEditDescription?.value.trim() || "";
     body.statusLabel = els.bodyEditStatus.value.trim();
+
+    if (isWaystationBody(body)) {
+      const enabled = Boolean(els.bodyEditControlOverride?.checked);
+      const { percentages, total } = bodyControlOverrideValuesFromForm();
+      if (enabled && Math.abs(total - 100) > 0.05) {
+        return flashMessage(`Waystation control percentages total ${Math.round(total * 10) / 10}%. They must equal exactly 100%.`);
+      }
+      body.controlOverride = { enabled, percentages };
+    } else {
+      delete body.controlOverride;
+    }
+
     body.lore = {
       diameter: els.bodyEditDiameter?.value.trim() || "",
       atmosphere: els.bodyEditAtmosphere?.value.trim() || "",
