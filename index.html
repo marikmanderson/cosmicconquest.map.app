@@ -262,8 +262,8 @@
                 <section id="bodyEditControlOverrideSection" class="full-field body-control-override hidden">
                   <div class="body-control-override-heading">
                     <div>
-                      <strong>Waystation Faction-Control Override</strong>
-                      <p>Enable this to manually divide this Waystation's strategic control between factions. Its Strategic Weight is distributed by the percentages below and contributes to Rantel Cluster control.</p>
+                      <strong>Celestial-Body Faction-Control Override</strong>
+                      <p>Enable this to manually divide this body’s Strategic Weight between factions. While enabled, the percentages below replace automatic POI and sector-derived control for this body. Linked child bodies may retain their own separate overrides.</p>
                     </div>
                     <label class="toggle-label"><input id="bodyEditControlOverride" type="checkbox" /> Enable Override</label>
                   </div>
@@ -286,12 +286,12 @@
                 <label>Population<input id="bodyEditPopulation" placeholder="Example: 8.4 billion" /></label>
                 <label>Major Imports<input id="bodyEditMajorImports" placeholder="Example: bacta, reactor parts" /></label>
                 <label>Major Exports<input id="bodyEditMajorExports" placeholder="Example: tibanna, ores" /></label>
-                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Waystation control overrides must total exactly 100% when enabled.</p>
+                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Faction-control overrides are available for every celestial body and must total exactly 100% when enabled.</p>
                 <div class="form-actions full-field">
                   <button class="primary-button" type="submit">Save Body Settings</button>
-                  <button class="danger-button" type="button" id="deleteBodyBtn">Delete Moon / Satellite</button>
+                  <button class="danger-button" type="button" id="deleteBodyBtn">Delete Celestial Body</button>
                 </div>
-                <p id="deleteBodyNote" class="full-field form-note">Core system bodies are protected. Select a linked moon, station, or satellite to delete it and its attached campaign data.</p>
+                <p id="deleteBodyNote" class="full-field form-note">Core system bodies are protected. Select a linked moon, Waystation, or satellite to delete it and its attached campaign data.</p>
               </form>
             </section>
 

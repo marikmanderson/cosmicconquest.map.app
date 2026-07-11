@@ -349,13 +349,20 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.2-prototype";
+    clone.meta.version = "0.4.3-prototype";
+    clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
+      ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
+      : [];
+    const deletedBodyIds = new Set(clone.meta.deletedBodyIds);
     clone.visibilityStates = deepClone(seed.visibilityStates);
     clone.poiTypes = deepClone(seed.poiTypes);
     clone.modelTemplates = deepClone(seed.modelTemplates);
     clone.moonTemplates = mergeById(seed.moonTemplates, clone.moonTemplates);
     clone.factions = mergeById(seed.factions, clone.factions);
-    clone.bodies = mergeById(seed.bodies, clone.bodies);
+    clone.bodies = mergeById(
+      (seed.bodies || []).filter(body => !deletedBodyIds.has(body.id)),
+      (clone.bodies || []).filter(body => !deletedBodyIds.has(body.id))
+    );
     clone.sectors = mergeById(seed.sectors || [], clone.sectors || []);
     clone.terrain = Array.isArray(clone.terrain) ? clone.terrain : deepClone(seed.terrain || []);
     clone.pois = Array.isArray(clone.pois) ? clone.pois : deepClone(seed.pois || []);
@@ -3134,6 +3141,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       total += val;
     }
     for (const bonus of calculateSectorBonuses(actual)) {
+      if (overriddenBodies.has(bonus.bodyId)) continue;
       scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
       total += bonus.value;
     }
@@ -3166,7 +3174,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       total += bonus.value;
     }
 
-    // Manually controlled Waystations contribute their Strategic Weight to their parent body.
+    // Any manually controlled linked body contributes its Strategic Weight to its parent body while the parent remains automatic.
     for (const child of state.data.bodies.filter(item => item.parentBodyId === bodyId)) {
       const childManual = manualBodyControl(child);
       if (!childManual) continue;
@@ -3216,7 +3224,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function factionBreakdownHtml(control) {
     if (!control.total) return `<p><strong>Control:</strong> No strategic value assigned yet.</p>`;
-    const manualNote = control.manual ? `<p><strong>Control Source:</strong> Manual Waystation override.</p>` : "";
+    const manualNote = control.manual ? `<p><strong>Control Source:</strong> Manual celestial-body override.</p>` : "";
     return `${manualNote}<div class="meta-grid">${state.data.factions.map(faction => {
       const value = Number(control.scores[faction.id] || 0);
       const pct = value / control.total * 100;
@@ -3707,6 +3715,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
       textureDataUrl = await readFileAsDataUrl(textureFile);
     }
 
+    state.data.meta ??= {};
+    state.data.meta.deletedBodyIds = (state.data.meta.deletedBodyIds || []).filter(id => id !== moonId);
+
     const newMoon = {
       id: moonId,
       type: "moon",
@@ -3784,7 +3795,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function onDeleteBody() {
     if (!isAdmin()) return flashMessage("Deleting celestial bodies requires Admin or Root Mode.");
     const body = bodyById(els.bodyEditSelect?.value);
-    if (!body) return flashMessage("Select a moon or satellite to delete.");
+    if (!body) return flashMessage("Select a linked moon, Waystation, or satellite to delete.");
     if (!bodyCanBeDeleted(body)) {
       return flashMessage("Core system bodies are protected and cannot be deleted.");
     }
@@ -3809,6 +3820,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
       : "";
 
     if (!confirm(`Delete ${body.name}?${warning} This cannot be undone unless you restore an exported JSON backup.`)) return;
+
+    state.data.meta ??= {};
+    const deletedBodyIds = new Set(state.data.meta.deletedBodyIds || []);
+    for (const removedId of removedIds) deletedBodyIds.add(removedId);
+    state.data.meta.deletedBodyIds = [...deletedBodyIds];
 
     state.data.bodies = state.data.bodies.filter(item => !removedIds.has(item.id));
     state.data.pois = state.data.pois.filter(item => !removedIds.has(item.bodyId));
@@ -3849,12 +3865,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
     flashMessage(`Deleted ${body.name}${childCount ? ` and ${childCount} linked child satellite${childCount === 1 ? "" : "s"}` : ""}.`);
   }
 
-  function isWaystationBody(body) {
-    return Boolean(body && body.type === "station" && body.parentBodyId === "rantel-cluster");
+  function bodySupportsControlOverride(body) {
+    return Boolean(body && body.id);
   }
 
   function manualBodyControl(body) {
-    if (!isWaystationBody(body) || body.controlOverride?.enabled !== true) return null;
+    if (!bodySupportsControlOverride(body) || body.controlOverride?.enabled !== true) return null;
     const scores = Object.fromEntries(state.data.factions.map(faction => [faction.id, 0]));
     const weight = Math.max(0, Number(body.strategicWeight || 0));
     const percentages = body.controlOverride?.percentages || {};
@@ -3864,7 +3880,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       percentTotal += pct;
       scores[faction.id] = weight * pct / 100;
     }
-    if (percentTotal <= 0) return null;
+    if (Math.abs(percentTotal - 100) > 0.05) return null;
     return { scores, total: weight, manual: true };
   }
 
@@ -3903,7 +3919,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function renderBodyControlOverrideEditor(body) {
     if (!els.bodyEditControlOverrideSection || !els.bodyEditControlFields || !els.bodyEditControlOverride) return;
-    const eligible = isWaystationBody(body);
+    const eligible = bodySupportsControlOverride(body);
     els.bodyEditControlOverrideSection.classList.toggle("hidden", !eligible);
     if (!eligible) {
       els.bodyEditControlOverride.checked = false;
@@ -3992,15 +4008,13 @@ function roundRectPath(ctx, x, y, w, h, r) {
     body.description = els.bodyEditDescription?.value.trim() || "";
     body.statusLabel = els.bodyEditStatus.value.trim();
 
-    if (isWaystationBody(body)) {
+    if (bodySupportsControlOverride(body)) {
       const enabled = Boolean(els.bodyEditControlOverride?.checked);
       const { percentages, total } = bodyControlOverrideValuesFromForm();
       if (enabled && Math.abs(total - 100) > 0.05) {
-        return flashMessage(`Waystation control percentages total ${Math.round(total * 10) / 10}%. They must equal exactly 100%.`);
+        return flashMessage(`Faction-control percentages total ${Math.round(total * 10) / 10}%. They must equal exactly 100%.`);
       }
       body.controlOverride = { enabled, percentages };
-    } else {
-      delete body.controlOverride;
     }
 
     body.lore = {

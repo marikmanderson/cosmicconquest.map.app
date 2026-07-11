@@ -2,7 +2,7 @@
 
 The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.4.2
+## What is in v0.4.3
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Planet Theater with rotating globe selection for planets and moons.
@@ -68,6 +68,6 @@ See `LOGISTICS_DECISIONS.md` and `SUPABASE_SETUP.md` for the shared Logistics sy
 Configure Supabase using `SUPABASE_SETUP.md` to enable Discord accounts, shared logistics, shared galaxy-map data, Realtime updates, and uploaded moon texture storage.
 
 
-## New in v0.4.2
+## New in v0.4.3
 
-The Celestial Bodies Editor now includes a public description field for every body. Rantel Waystations also have an optional faction-control override; enabled percentages must total 100% and distribute each station's Strategic Weight into Rantel Cluster and system control.
+The Celestial Bodies Editor includes a public description field and optional faction-control override for every body. Enabled percentages must total 100% and distribute the selected body’s Strategic Weight between factions. The override replaces automatic POI and sector control for that body, while separately overridden linked bodies can contribute to an automatic parent-body calculation.

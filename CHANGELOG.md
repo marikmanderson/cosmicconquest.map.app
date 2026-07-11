@@ -1,5 +1,14 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.3-prototype
+- Fixed Delete Celestial Body on the shared website.
+- Deleted seeded moons and Waystations now remain deleted after Supabase saves, Realtime refreshes, and page reloads.
+- Added persistent body-deletion tombstones to prevent migration logic from silently restoring removed seeded bodies.
+- Recreating a custom moon with the same ID clears its old deletion tombstone.
+- Expanded the manual faction-control override from Rantel Waystations to every body available in the Celestial Bodies Editor.
+- Manual overrides now replace both POI and sector-derived control for the selected body and distribute its Strategic Weight by GM-entered percentages.
+- Manually controlled linked moons, stations, and satellites can contribute their Strategic Weight to an automatic parent-body calculation.
+
 ## v0.4.2-prototype
 - Added a dedicated Public Description / Briefing editor to the Celestial Bodies Editor for planets, moons, Waystations, and other bodies.
 - Added an optional manual faction-control override for Rantel Waystations.
