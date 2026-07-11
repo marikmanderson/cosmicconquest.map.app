@@ -3,8 +3,8 @@
 // When deploying Supabase, fill in the project URL and publishable/anon key.
 window.CC_BACKEND_CONFIG = {
   enabled: false,
-  supabaseUrl: "",
-  supabaseAnonKey: "",
-  discordRedirectUrl: window.location.origin + window.location.pathname,
+  supabaseUrl: "https://koxwnagkcqpkthilcktn.supabase.co",
+  supabaseAnonKey: "sb_publishable_ix9ivn5XPdaRSiUh_hTfWA_uDUBGldo",
+  discordRedirectUrl: "https://marikmanderson.github.io/cosmicconquest.map.app/",
   realtime: true
 };
