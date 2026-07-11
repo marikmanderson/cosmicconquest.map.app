@@ -1,8 +1,8 @@
 # Cosmic Conquest — Osiris Command Atlas
 
-A client-side prototype for the Cosmic Conquest interactive campaign map.
+The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.3.8
+## What is in v0.4.1
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Planet Theater with rotating globe selection for planets and moons.
@@ -23,7 +23,8 @@ A client-side prototype for the Cosmic Conquest interactive campaign map.
 - System View left-drag: pan the system map. A short left-click selects assets.
 - Planet Theater left-drag: rotate the globe.
 - Planet Theater Shift + left-drag, right-drag, or middle-drag: pan the theater camera.
-- Planet Theater right-click while in Web Admin role: quick POI create/edit menu.
+- Planet Theater middle-click while in Command/Admin/Root role: quick-create a POI. Command is restricted to Tactical Points.
+- Planet Theater right-click an existing POI while in Admin/Root role: quick-edit or delete.
 - Planet Theater Zoom + / Zoom - / Fit buttons: quick camera controls for the selected globe.
 - Reset Camera: restores both System View and Planet Theater to default scale and position.
 
@@ -42,17 +43,26 @@ Then open `http://localhost:8080`.
 This is still a frontend/localStorage prototype. Export JSON before major edits if you want to preserve work between builds.
 
 
-## v0.3.8 Notes
+## v0.4.1 Notes
 
 This pass focuses on the POI system and admin quality-of-life tools. Seeded POIs and terrain have been cleared so Web Admins can test right-click creation/editing on clean planets. The Terrain Editor has been replaced by the Celestial Bodies Editor for tuning planet/moon size, orbit spacing, and orbit speed.
 
 
-## New in v0.3.8
+## New in v0.4.1
 - Added a Flat Tactical Map mode in Planet Theater.
 - Flat map uses the same 2:1 equirectangular texture pipeline as the globe.
 - Brekka now uses the new custom high-resolution flat/globe texture.
 
 
-## New in v0.3.8
+## New in v0.4.1
 - Fixed globe texture projection when opened directly from the local file system.
 - Globe View now samples the same 2:1 flat map texture directly without relying on browser-blocked canvas pixel reads.
+
+
+## Logistics
+See `LOGISTICS_DECISIONS.md` and `SUPABASE_SETUP.md` for the shared Logistics system.
+
+
+## Shared deployment
+
+Configure Supabase using `SUPABASE_SETUP.md` to enable Discord accounts, shared logistics, shared galaxy-map data, Realtime updates, and uploaded moon texture storage.

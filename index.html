@@ -21,6 +21,7 @@
       <nav class="view-tabs" aria-label="Map views">
         <button class="tab-button active" data-view="system">System View</button>
         <button class="tab-button" data-view="planet">Planet Theater</button>
+        <button class="tab-button" data-view="logistics">Logistics</button>
         <button class="tab-button" data-view="admin">Admin Console</button>
       </nav>
 
@@ -52,6 +53,14 @@
             <button id="rootModeBtn" class="mini-button" type="button" data-mode="root">Root Mode</button>
           </div>
           <p id="modeReadout" class="settings-readout">Current mode: Viewer</p>
+          <div class="account-panel">
+            <strong>Shared Account</strong>
+            <p id="accountStatus" class="settings-readout">Local testing mode. Configure Supabase to enable Discord login, shared logistics, and the shared galaxy map.</p>
+            <div class="account-actions">
+              <button id="discordLoginBtn" class="mini-button" type="button">Sign in with Discord</button>
+              <button id="accountLogoutBtn" class="mini-button hidden" type="button">Sign Out</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -104,6 +113,59 @@
                 <h3>World Information</h3>
                 <div id="bodyIntel" class="body-intel-list"></div>
               </div>
+            </aside>
+          </div>
+        </div>
+
+
+        <div id="logisticsView" class="view-panel logistics-view">
+          <div class="logistics-header">
+            <div>
+              <p class="eyebrow">Republic Logistics Command</p>
+              <h2>Company Requisition &amp; Asset Tracker</h2>
+            </div>
+            <div id="logisticsBackendPill" class="status-pill">Local Test Data</div>
+          </div>
+          <div class="logistics-grid">
+            <section class="logistics-panel logistics-catalog-panel">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Requisition Catalog</p>
+                  <h3>Available Assets</h3>
+                </div>
+              </div>
+              <label>Category<select id="logisticsCategorySelect"></select></label>
+              <div id="logisticsCatalogList" class="logistics-list"></div>
+            </section>
+
+            <section class="logistics-panel logistics-tracker-panel">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Company Tracker</p>
+                  <h3 id="logisticsCompanyTitle">Selected Company</h3>
+                </div>
+              </div>
+              <div class="tracker-toolbar">
+                <label>Company<select id="logisticsCompanySelect"></select></label>
+                <div id="logisticsPointReadout" class="requisition-readout">0 / 0 RP</div>
+              </div>
+              <div id="logisticsTrackerList" class="company-tracker"></div>
+            </section>
+
+            <aside class="logistics-panel logistics-info-panel">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Field Guide</p>
+                  <h3>Logistics Information</h3>
+                </div>
+              </div>
+              <p class="logistics-copy">Company requisition points are used to place vehicles, equipment, and supplies into storage. Each requisition deducts its current catalog cost from the selected company. The weekly Republic allowance is calculated from held Resource and Production Sites and granted directly to every company, up to that company’s cap.</p>
+              <div class="condition-key">
+                <div><span class="condition-dot operational"></span><strong>Operational</strong><p>Ready for deployment.</p></div>
+                <div><span class="condition-dot maintenance"></span><strong>Requires Maintenance</strong><p>Roleplay or requisition points are required to return the asset to service.</p></div>
+                <div><span class="condition-dot salvageable"></span><strong>Salvageable</strong><p>Too damaged for repair, but parts can be recovered for further use.</p></div>
+              </div>
+              <div id="logisticsSummary" class="logistics-summary"></div>
             </aside>
           </div>
         </div>
@@ -215,11 +277,88 @@
                 <p class="full-field form-note">For planets, orbit distance/speed controls spacing and movement around Osiris. For moons and satellite stations, it controls spacing and movement around the parent planet.</p>
                 <div class="form-actions full-field">
                   <button class="primary-button" type="submit">Save Body Settings</button>
+                  <button class="danger-button" type="button" id="deleteBodyBtn">Delete Moon / Satellite</button>
                 </div>
+                <p id="deleteBodyNote" class="full-field form-note">Core system bodies are protected. Select a linked moon, station, or satellite to delete it and its attached campaign data.</p>
               </form>
             </section>
 
             
+
+            <section id="logisticsAdminCard" class="admin-card full-admin-card">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Logistics Administration</p>
+                  <h2>Company Requisition Control</h2>
+                </div>
+                <span id="logisticsAdminBackendPill" class="status-pill">Local Test Data</span>
+              </div>
+
+              <div class="logistics-admin-grid">
+                <div class="logistics-admin-section">
+                  <h3>Company Requisition Points</h3>
+                  <p class="form-note">Weekly grants are applied directly to every company. Use this control for manual corrections or event rewards.</p>
+                  <form id="setCompanyPointsForm" class="compact-form">
+                    <label>Company<select id="setPointsCompanySelect"></select></label>
+                    <label>Set Points<input id="setCompanyPointsInput" type="number" min="0" step="1" value="0" /></label>
+                    <button class="ghost-button" type="submit">Set Company Points</button>
+                  </form>
+                </div>
+
+                <div class="logistics-admin-section">
+                  <h3>Weekly Requisition Calculation</h3>
+                  <div id="requisitionSiteBreakdown" class="site-breakdown"></div>
+                  <div class="form-actions">
+                    <button id="syncRequisitionSitesBtn" class="ghost-button" type="button">Sync Site Snapshot</button>
+                    <button id="runWeeklyGrantBtn" class="primary-button" type="button">Run Weekly Grant</button>
+                  </div>
+                </div>
+
+                <div id="logisticsRootSettings" class="logistics-admin-section root-only-section">
+                  <h3>Root Balance Settings</h3>
+                  <form id="logisticsSettingsForm" class="compact-form two-column-form">
+                    <label>Default Company Cap<input id="defaultCompanyCapInput" type="number" min="0" step="1" /></label>
+                    <label>Default Salvage Return %<input id="salvagePercentInput" type="number" min="10" max="50" step="1" /></label>
+                    <label>Weekly Base Allowance<input id="weeklyBaseInput" type="number" min="0" step="1" /></label>
+                    <label>Resource Minor<input id="resourceMinorInput" type="number" min="0" step="1" /></label>
+                    <label>Resource Standard<input id="resourceStandardInput" type="number" min="0" step="1" /></label>
+                    <label>Resource Major+<input id="resourceMajorInput" type="number" min="0" step="1" /></label>
+                    <label>Production Minor<input id="productionMinorInput" type="number" min="0" step="1" /></label>
+                    <label>Production Standard<input id="productionStandardInput" type="number" min="0" step="1" /></label>
+                    <label>Production Major+<input id="productionMajorInput" type="number" min="0" step="1" /></label>
+                    <button class="primary-button full-field" type="submit">Save Logistics Settings</button>
+                  </form>
+                </div>
+
+                <div id="companyConfigSection" class="logistics-admin-section root-only-section">
+                  <h3>Company Configuration</h3>
+                  <div id="companyConfigList" class="configuration-list"></div>
+                </div>
+
+                <div id="catalogConfigSection" class="logistics-admin-section root-only-section">
+                  <h3>Catalog Configuration</h3>
+                  <form id="catalogItemForm" class="compact-form">
+                    <input id="catalogItemId" type="hidden" />
+                    <label>Category<select id="catalogItemCategory"></select></label>
+                    <label>Name<input id="catalogItemName" required /></label>
+                    <label>Requisition Cost<input id="catalogItemCost" type="number" min="0" step="1" required /></label>
+                    <div class="form-actions">
+                      <button class="primary-button" type="submit">Save Catalog Item</button>
+                      <button id="catalogItemNewBtn" class="ghost-button" type="button">New Item</button>
+                      <button id="catalogItemDeleteBtn" class="danger-button" type="button">Delete Item</button>
+                    </div>
+                  </form>
+                  <div id="catalogConfigList" class="configuration-list catalog-config-list"></div>
+                </div>
+
+                <div id="accountAssignmentSection" class="logistics-admin-section root-only-section">
+                  <h3>Discord Account Assignments</h3>
+                  <p class="form-note">New Discord users begin as Viewer. Assign their site role and company here after shared authentication is configured.</p>
+                  <div id="accountAssignmentList" class="configuration-list"></div>
+                </div>
+              </div>
+            </section>
+
             <section id="passwordToolsCard" class="admin-card wide-card">
               <div class="section-header">
                 <div>
@@ -327,7 +466,10 @@
     <div id="dialogBody"></div>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="data/backend-config.js"></script>
   <script src="data/seed-data.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/logistics.js"></script>
 </body>
 </html>

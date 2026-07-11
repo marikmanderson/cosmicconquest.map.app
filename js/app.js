@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "cc_osiris_atlas_state_v038";
+  const STORAGE_KEY = "cc_osiris_atlas_state_v040";
   const seed = window.CC_SEED_DATA;
   const STRATEGIC_TIERS = [
     { id: "none", label: "None / RP Only", value: 0 },
@@ -67,6 +67,7 @@
     modeReadout: document.getElementById("modeReadout"),
     systemView: document.getElementById("systemView"),
     planetView: document.getElementById("planetView"),
+    logisticsView: document.getElementById("logisticsView"),
     adminView: document.getElementById("adminView"),
     systemCanvas: document.getElementById("systemCanvas"),
     planetCanvas: document.getElementById("planetCanvas"),
@@ -177,6 +178,8 @@
     bodyEditPopulation: document.getElementById("bodyEditPopulation"),
     bodyEditMajorImports: document.getElementById("bodyEditMajorImports"),
     bodyEditMajorExports: document.getElementById("bodyEditMajorExports"),
+    deleteBodyBtn: document.getElementById("deleteBodyBtn"),
+    deleteBodyNote: document.getElementById("deleteBodyNote"),
     bodyIntel: document.getElementById("bodyIntel"),
     dataToolsCard: document.getElementById("dataToolsCard"),
     passwordToolsCard: document.getElementById("passwordToolsCard"),
@@ -341,7 +344,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.3.8-prototype";
+    clone.meta.version = "0.4.1-prototype";
     clone.visibilityStates = deepClone(seed.visibilityStates);
     clone.poiTypes = deepClone(seed.poiTypes);
     clone.modelTemplates = deepClone(seed.modelTemplates);
@@ -402,6 +405,8 @@
 
   function saveData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    window.CC_LOGISTICS?.scheduleSiteSync?.();
+    window.CC_LOGISTICS?.scheduleAtlasSave?.();
   }
 
   function uuid(prefix = "id") {
@@ -661,6 +666,7 @@
     els.newTerrainBtn?.addEventListener("click", clearTerrainForm);
     els.deleteTerrainBtn?.addEventListener("click", onDeleteTerrain);
     els.bodyForm?.addEventListener("submit", onBodySubmit);
+    els.deleteBodyBtn?.addEventListener("click", onDeleteBody);
     els.bodyEditSelect?.addEventListener("change", () => loadBodyIntoForm(els.bodyEditSelect.value));
     els.exportDataBtn.addEventListener("click", onExportData);
     els.importDataInput.addEventListener("change", onImportData);
@@ -791,7 +797,9 @@
     els.tabButtons.forEach(button => button.classList.toggle("active", button.dataset.view === view));
     els.systemView.classList.toggle("active-view", view === "system");
     els.planetView.classList.toggle("active-view", view === "planet");
+    els.logisticsView?.classList.toggle("active-view", view === "logistics");
     els.adminView.classList.toggle("active-view", view === "admin");
+    document.getElementById("app-shell")?.classList.toggle("logistics-mode", view === "logistics");
 
     renderAllPanels();
   }
@@ -951,6 +959,7 @@ function updatePlanetViewUi() {
     renderAdminAccessState();
     updatePlanetViewUi();
     renderBodyIntelPanel();
+    window.CC_LOGISTICS?.render?.();
     state.planetDirty = true;
     if (state.activeView === "planet") renderPlanet();
   }
@@ -2030,15 +2039,17 @@ function roundRectPath(ctx, x, y, w, h, r) {
       img.src = src;
     });
     for (const body of state.data.bodies || []) {
-      if (!body.textureDataUrl) continue;
+      const textureSource = body.textureUrl || body.textureDataUrl;
+      if (!textureSource) continue;
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.onload = () => {
         state.textures[body.id] = img;
         makeSystemTexture(body.id, img);
         makeGlobeRenderTexture(body.id, img);
         state.planetDirty = true;
       };
-      img.src = body.textureDataUrl;
+      img.src = textureSource;
     }
   }
 
@@ -3306,6 +3317,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       input.disabled = !adminAllowed;
       input.title = adminAllowed ? "" : "Requires Admin or Root Mode.";
     });
+    updateBodyDeleteState();
 
     const poiInputs = [...els.poiForm.querySelectorAll("input, select, textarea, button")];
     poiInputs.forEach(input => {
@@ -3637,14 +3649,34 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!name) return flashMessage("Moon name is required.");
     const parent = bodyById(els.moonParent.value);
     if (!parent) return flashMessage("Choose a parent planet first.");
-    const textureDataUrl = await readFileAsDataUrl(els.moonTexture?.files?.[0]);
+
+    const moonId = slugify(name) || uuid("moon");
+    const textureFile = els.moonTexture?.files?.[0] || null;
+    let textureDataUrl = null;
+    let textureUrl = null;
+    let texturePath = null;
+
+    if (textureFile && window.CC_LOGISTICS?.uploadAtlasTexture) {
+      try {
+        const uploaded = await window.CC_LOGISTICS.uploadAtlasTexture(textureFile, moonId);
+        textureUrl = uploaded?.url || null;
+        texturePath = uploaded?.path || null;
+      } catch (err) {
+        console.warn("Shared texture upload failed; keeping a local browser copy.", err);
+        flashMessage(`Shared texture upload failed: ${err.message || err}. The moon will use a local-only texture until uploaded again.`);
+      }
+    }
+    if (textureFile && !textureUrl) {
+      textureDataUrl = await readFileAsDataUrl(textureFile);
+    }
+
     const newMoon = {
-      id: slugify(name) || uuid("moon"),
+      id: moonId,
       type: "moon",
       parentBodyId: parent.id,
       name,
       template: "custom",
-      description: "Custom moon theater. Add a briefing paragraph in the data export or future body editor pass.",
+      description: "Custom moon theater. Add a briefing paragraph in the Celestial Bodies Editor.",
       colorA: "#6f8795",
       colorB: "#d7e5ee",
       radius: 12,
@@ -3652,18 +3684,139 @@ function roundRectPath(ctx, x, y, w, h, r) {
       moonOrbitSpeed: 0.00006 + Math.random() * 0.00004,
       moonOrbitOffset: Math.random() * Math.PI * 2,
       strategicWeight: Number(els.moonWeight.value || 6),
+      textureUrl,
+      texturePath,
       textureDataUrl
     };
+
     state.data.bodies.push(newMoon);
-    if (textureDataUrl) {
+    const textureSource = textureUrl || textureDataUrl;
+    if (textureSource) {
       const img = new Image();
-      img.onload = () => { state.textures[newMoon.id] = img; makeSystemTexture(newMoon.id, img); state.planetDirty = true; renderAllPanels(); };
-      img.src = textureDataUrl;
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        state.textures[newMoon.id] = img;
+        makeSystemTexture(newMoon.id, img);
+        makeGlobeRenderTexture(newMoon.id, img);
+        state.planetDirty = true;
+        renderAllPanels();
+      };
+      img.src = textureSource;
     }
     saveData();
     state.selectedBodyId = newMoon.id;
     renderAllPanels();
     els.moonForm.reset();
+  }
+
+  function bodyCanBeDeleted(body) {
+    return Boolean(body && body.parentBodyId);
+  }
+
+  function descendantBodyIds(rootBodyId) {
+    const ids = new Set([rootBodyId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const body of state.data.bodies) {
+        if (body.parentBodyId && ids.has(body.parentBodyId) && !ids.has(body.id)) {
+          ids.add(body.id);
+          changed = true;
+        }
+      }
+    }
+    return ids;
+  }
+
+  function updateBodyDeleteState(body = bodyById(els.bodyEditSelect?.value)) {
+    if (!els.deleteBodyBtn) return;
+    const deletable = bodyCanBeDeleted(body);
+    els.deleteBodyBtn.disabled = !isAdmin() || !deletable;
+    els.deleteBodyBtn.title = !isAdmin()
+      ? "Requires Admin or Root Mode."
+      : deletable
+        ? `Delete ${body.name} and its attached data.`
+        : "Core planets, the asteroid belt, and other primary system bodies are protected.";
+    if (els.deleteBodyNote) {
+      els.deleteBodyNote.textContent = deletable
+        ? `${body.name} is linked to ${bodyById(body.parentBodyId)?.name || "another system body"} and can be deleted. Associated POIs, terrain, child satellites, and cached textures will also be removed.`
+        : "Core system bodies are protected. Select a linked moon, station, or satellite to delete it and its attached campaign data.";
+    }
+  }
+
+  function onDeleteBody() {
+    if (!isAdmin()) return flashMessage("Deleting celestial bodies requires Admin or Root Mode.");
+    const body = bodyById(els.bodyEditSelect?.value);
+    if (!body) return flashMessage("Select a moon or satellite to delete.");
+    if (!bodyCanBeDeleted(body)) {
+      return flashMessage("Core system bodies are protected and cannot be deleted.");
+    }
+
+    const removedIds = descendantBodyIds(body.id);
+    const removedBodies = state.data.bodies.filter(item => removedIds.has(item.id));
+    const poiCount = state.data.pois.filter(item => removedIds.has(item.bodyId)).length;
+    const terrainCount = state.data.terrain.filter(item => removedIds.has(item.bodyId)).length;
+    const sectorCount = (state.data.sectors || []).filter(item => removedIds.has(item.bodyId)).length;
+    const childCount = Math.max(0, removedBodies.length - 1);
+    const parent = bodyById(body.parentBodyId);
+
+    const details = [
+      childCount ? `${childCount} child satellite${childCount === 1 ? "" : "s"}` : "",
+      poiCount ? `${poiCount} POI${poiCount === 1 ? "" : "s"}` : "",
+      terrainCount ? `${terrainCount} terrain feature${terrainCount === 1 ? "" : "s"}` : "",
+      sectorCount ? `${sectorCount} sector${sectorCount === 1 ? "" : "s"}` : ""
+    ].filter(Boolean);
+
+    const warning = details.length
+      ? ` This will also remove ${details.join(", ")}.`
+      : "";
+
+    if (!confirm(`Delete ${body.name}?${warning} This cannot be undone unless you restore an exported JSON backup.`)) return;
+
+    state.data.bodies = state.data.bodies.filter(item => !removedIds.has(item.id));
+    state.data.pois = state.data.pois.filter(item => !removedIds.has(item.bodyId));
+    state.data.terrain = state.data.terrain.filter(item => !removedIds.has(item.bodyId));
+    state.data.sectors = (state.data.sectors || []).filter(item => !removedIds.has(item.bodyId));
+
+    const removedTexturePaths = removedBodies.map(item => item.texturePath).filter(Boolean);
+    if (removedTexturePaths.length) {
+      window.CC_LOGISTICS?.deleteAtlasTextures?.(removedTexturePaths);
+    }
+    for (const removedId of removedIds) {
+      delete state.textures[removedId];
+      delete state.textureCanvases[removedId];
+      delete state.systemTextureCanvases[removedId];
+      state.bodyPositions.delete(removedId);
+    }
+
+    if (state.selectedPoiId && !state.data.pois.some(item => item.id === state.selectedPoiId)) {
+      state.selectedPoiId = null;
+    }
+    if (state.selectedTerrainId && !state.data.terrain.some(item => item.id === state.selectedTerrainId)) {
+      state.selectedTerrainId = null;
+    }
+
+    const fallback = parent && state.data.bodies.some(item => item.id === parent.id)
+      ? parent
+      : firstTheaterBody() || state.data.bodies[0];
+
+    state.selectedBodyId = fallback?.id || "";
+    state.planetPlacement = null;
+    state.planetDirty = true;
+    saveData();
+    renderAllPanels();
+
+    if (els.bodyEditSelect?.value) {
+      loadBodyIntoForm(els.bodyEditSelect.value);
+    }
+    flashMessage(`Deleted ${body.name}${childCount ? ` and ${childCount} linked child satellite${childCount === 1 ? "" : "s"}` : ""}.`);
+  }
+
+  function bodyUsesPrimarySystemOrbit(body) {
+    return Boolean(body && (
+      !body.parentBodyId
+      || (body.type === "station" && body.parentBodyId === "rantel-cluster")
+    ));
   }
 
   function loadBodyIntoForm(bodyId) {
@@ -3673,8 +3826,13 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.bodyEditSelect.value = body.id;
     els.bodyEditName.value = body.name || "";
     els.bodyEditRadius.value = Number(body.radius || 10);
-    const orbitRadius = body.type === "moon" || body.parentBodyId ? (body.moonOrbitRadius || body.satelliteOrbitRadius || body.orbitRadius || 56) : (body.orbitRadius || 100);
-    const orbitSpeed = body.type === "moon" || body.parentBodyId ? (body.moonOrbitSpeed || body.satelliteOrbitSpeed || body.orbitSpeed || 0.00006) : (body.orbitSpeed || 0.00002);
+    const usesPrimaryOrbit = bodyUsesPrimarySystemOrbit(body);
+    const orbitRadius = usesPrimaryOrbit
+      ? (body.orbitRadius || 100)
+      : (body.moonOrbitRadius || body.satelliteOrbitRadius || body.orbitRadius || 56);
+    const orbitSpeed = usesPrimaryOrbit
+      ? (body.orbitSpeed || 0.00002)
+      : (body.moonOrbitSpeed || body.satelliteOrbitSpeed || body.orbitSpeed || 0.00006);
     els.bodyEditOrbitRadius.value = Number(orbitRadius);
     els.bodyEditOrbitSpeed.value = Number(orbitSpeed);
     els.bodyEditWeight.value = Number(body.strategicWeight || 0);
@@ -3694,6 +3852,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (els.bodyEditPopulation) els.bodyEditPopulation.value = lore.population;
     if (els.bodyEditMajorImports) els.bodyEditMajorImports.value = lore.majorImports;
     if (els.bodyEditMajorExports) els.bodyEditMajorExports.value = lore.majorExports;
+    updateBodyDeleteState(body);
   }
 
   function onBodySubmit(event) {
@@ -3706,12 +3865,15 @@ function roundRectPath(ctx, x, y, w, h, r) {
     body.radius = clamp(Number(els.bodyEditRadius.value || body.radius || 10), 1, 120);
     const orbitRadius = Math.max(1, Number(els.bodyEditOrbitRadius.value || 1));
     const orbitSpeed = Math.max(0, Number(els.bodyEditOrbitSpeed.value || 0));
-    if (body.type === "moon" || body.parentBodyId) {
-      body.moonOrbitRadius = orbitRadius;
-      body.moonOrbitSpeed = orbitSpeed;
-    } else {
+    if (bodyUsesPrimarySystemOrbit(body)) {
       body.orbitRadius = orbitRadius;
       body.orbitSpeed = orbitSpeed;
+      // Remove stale satellite-orbit overrides created by older builds.
+      delete body.moonOrbitRadius;
+      delete body.moonOrbitSpeed;
+    } else {
+      body.moonOrbitRadius = orbitRadius;
+      body.moonOrbitSpeed = orbitSpeed;
     }
     body.strategicWeight = Math.max(0, Number(els.bodyEditWeight.value || 0));
     body.statusLabel = els.bodyEditStatus.value.trim();
@@ -3899,6 +4061,48 @@ function roundRectPath(ctx, x, y, w, h, r) {
     updatePoiFormMode();
     updateIconPreview(els.poiModel, els.poiIconPreview, els.poiOwner, els.poiColor, els.poiType);
   }
+
+
+  function applyAuthenticatedRole(role) {
+    const normalized = normalizeRole(role);
+    if (state.role === normalized) return;
+    state.role = normalized;
+    localStorage.setItem("cc_role", normalized);
+    renderAllPanels();
+  }
+
+  function applySharedData(sharedData) {
+    if (!sharedData || typeof sharedData !== "object") return;
+    state.data = migrateData(sharedData);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    if (!state.data.bodies.some(body => body.id === state.selectedBodyId)) {
+      state.selectedBodyId = firstTheaterBody()?.id || state.data.bodies[0]?.id || "";
+    }
+    state.selectedPoiId = state.data.pois.some(poi => poi.id === state.selectedPoiId) ? state.selectedPoiId : null;
+    state.selectedTerrainId = state.data.terrain.some(item => item.id === state.selectedTerrainId) ? state.selectedTerrainId : null;
+    state.textures = {};
+    state.textureCanvases = {};
+    state.systemTextureCanvases = {};
+    loadTextures();
+    state.planetDirty = true;
+    renderAllPanels();
+  }
+
+  window.CC_ATLAS_API = {
+    getRole: () => state.role,
+    isAdmin,
+    isRoot,
+    isCommand: () => state.role === "command",
+    getData: () => state.data,
+    saveData,
+    flashMessage,
+    setView,
+    applyAuthenticatedRole,
+    escapeHtml,
+    uuid,
+    renderAllPanels,
+    applySharedData
+  };
 
   init();
 })();

@@ -1212,3 +1212,71 @@ select:focus, input:focus, textarea:focus {
   font-size: 11px;
   line-height: 1.2;
 }
+
+
+/* v0.4.0 Logistics System */
+.app-shell.logistics-mode .layout-grid { grid-template-columns: minmax(0, 1fr); }
+.app-shell.logistics-mode .right-rail { display: none; }
+.logistics-view { padding: 18px; overflow: auto; }
+.logistics-header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:14px; }
+.logistics-grid { display:grid; grid-template-columns:minmax(250px,.8fr) minmax(430px,1.5fr) minmax(280px,.9fr); gap:14px; min-height:calc(100% - 74px); }
+.logistics-panel { border:1px solid var(--border); border-radius:18px; background:rgba(2,11,22,.78); padding:15px; min-width:0; overflow:auto; }
+.logistics-panel h3, .logistics-admin-section h3 { margin:0 0 12px; color:var(--text); }
+.logistics-list, .company-tracker, .configuration-list { display:grid; gap:9px; margin-top:13px; }
+.catalog-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:11px; border:1px solid rgba(145,203,255,.15); border-radius:13px; background:rgba(4,16,29,.66); }
+.catalog-row > div { display:grid; gap:3px; }
+.catalog-row span { color:var(--cyan); font-size:.8rem; }
+.catalog-row button { padding:8px 10px; }
+button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
+.tracker-toolbar { display:grid; grid-template-columns:1fr auto; align-items:end; gap:12px; }
+.requisition-readout, .large-number { border:1px solid rgba(109,247,255,.28); border-radius:14px; padding:10px 14px; color:var(--cyan); font-weight:700; background:rgba(4,18,31,.8); white-space:nowrap; }
+.large-number { font-size:1.55rem; display:inline-block; margin-bottom:12px; }
+.tracker-category { border-top:1px solid rgba(145,203,255,.16); padding-top:12px; }
+.tracker-category:first-child { border-top:0; padding-top:0; }
+.tracker-category h4 { display:flex; justify-content:space-between; color:var(--cyan); text-transform:uppercase; letter-spacing:.08em; font-size:.76rem; }
+.asset-group { border:1px solid rgba(145,203,255,.14); border-radius:14px; overflow:hidden; margin-top:8px; }
+.asset-group-title { display:flex; justify-content:space-between; padding:9px 11px; background:rgba(15,36,55,.62); }
+.asset-unit-list { display:grid; }
+.asset-unit { display:grid; grid-template-columns:40px 18px 1fr; align-items:center; gap:8px; padding:8px 10px; border-top:1px solid rgba(145,203,255,.1); }
+.asset-unit:first-child { border-top:0; }
+.unit-number { color:var(--muted); font-family:ui-monospace,monospace; }
+.unit-controls { display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; }
+.asset-status-select { max-width:210px; padding:7px 9px; }
+.condition-dot { width:11px; height:11px; border-radius:50%; display:inline-block; box-shadow:0 0 10px currentColor; }
+.condition-dot.operational, .condition-chip.operational { color:#58e68a; background:rgba(44,184,96,.18); }
+.condition-dot.maintenance, .condition-chip.maintenance { color:#ffae4a; background:rgba(255,153,34,.17); }
+.condition-dot.salvageable, .condition-chip.salvageable { color:#ff625b; background:rgba(255,72,62,.17); }
+.condition-dot.operational, .condition-dot.maintenance, .condition-dot.salvageable { background:currentColor; }
+.condition-chip { border:1px solid currentColor; border-radius:999px; padding:5px 8px; font-size:.72rem; }
+.logistics-copy { color:var(--muted); line-height:1.55; }
+.condition-key { display:grid; gap:10px; margin:16px 0; }
+.condition-key > div { display:grid; grid-template-columns:16px 1fr; column-gap:8px; align-items:center; border:1px solid rgba(145,203,255,.12); border-radius:13px; padding:10px; }
+.condition-key p { grid-column:2; margin:3px 0 0; color:var(--muted); font-size:.82rem; }
+.summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.summary-grid div { border:1px solid rgba(145,203,255,.13); border-radius:12px; padding:10px; display:grid; }
+.summary-grid strong { font-size:1.3rem; color:var(--cyan); }
+.summary-grid span { color:var(--muted); font-size:.72rem; }
+.requisition-summary { display:flex; justify-content:space-between; gap:12px; margin-top:10px; padding:10px; border-radius:12px; background:rgba(5,18,31,.74); }
+.empty-state { color:var(--muted); font-style:italic; margin:8px 0; }
+.account-panel { margin-top:12px; padding-top:12px; border-top:1px solid rgba(145,203,255,.18); }
+.account-panel strong { color:var(--cyan); text-transform:uppercase; letter-spacing:.06em; font-size:.72rem; }
+.account-actions { display:flex; gap:8px; margin-top:8px; }
+.full-admin-card { grid-column:1 / -1; }
+.logistics-admin-grid { display:grid; grid-template-columns:repeat(2,minmax(300px,1fr)); gap:12px; }
+.logistics-admin-section { border:1px solid rgba(145,203,255,.14); border-radius:15px; padding:13px; background:rgba(2,10,19,.58); min-width:0; }
+.compact-form { display:grid; grid-template-columns:minmax(150px,1fr) minmax(120px,.65fr) auto; align-items:end; gap:9px; margin-top:10px; }
+.compact-form label { display:grid; gap:5px; }
+.two-column-form { grid-template-columns:repeat(2,minmax(140px,1fr)); }
+.site-breakdown { display:grid; gap:8px; }
+.site-total, .site-body-row { display:grid; gap:3px; padding:9px; border:1px solid rgba(145,203,255,.13); border-radius:12px; }
+.site-total { background:rgba(12,38,54,.56); }
+.site-total span, .site-body-row span, .site-body-row small { color:var(--muted); }
+.configuration-row { display:grid; grid-template-columns:minmax(150px,1fr) minmax(100px,.5fr) auto; gap:8px; align-items:center; padding:9px; border:1px solid rgba(145,203,255,.13); border-radius:12px; background:rgba(5,17,30,.7); }
+.catalog-config-button { width:100%; color:var(--text); text-align:left; grid-template-columns:150px 1fr 75px; }
+.catalog-config-button span { color:var(--muted); }
+.catalog-config-button em { color:var(--cyan); font-style:normal; text-align:right; }
+.account-assignment-row { grid-template-columns:minmax(180px,1fr) 120px 170px auto; }
+.account-assignment-row > div { display:grid; }
+.account-assignment-row small { color:var(--muted); }
+@media (max-width: 1280px) { .logistics-grid { grid-template-columns:1fr 1.3fr; } .logistics-info-panel { grid-column:1 / -1; } }
+@media (max-width: 900px) { .logistics-grid, .logistics-admin-grid { grid-template-columns:1fr; } .compact-form, .two-column-form { grid-template-columns:1fr; } .account-assignment-row, .configuration-row { grid-template-columns:1fr; } }
