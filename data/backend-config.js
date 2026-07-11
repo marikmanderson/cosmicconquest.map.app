@@ -2,7 +2,7 @@
 // Leave enabled:false for local browser testing.
 // When deploying Supabase, fill in the project URL and publishable/anon key.
 window.CC_BACKEND_CONFIG = {
-  enabled: false,
+  enabled: true,
   supabaseUrl: "https://koxwnagkcqpkthilcktn.supabase.co",
   supabaseAnonKey: "sb_publishable_ix9ivn5XPdaRSiUh_hTfWA_uDUBGldo",
   discordRedirectUrl: "https://marikmanderson.github.io/cosmicconquest.map.app/",
