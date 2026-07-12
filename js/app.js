@@ -126,6 +126,7 @@
     poiStrategicValueLabel: document.getElementById("poiStrategicValueLabel"),
     poiTactical: document.getElementById("poiTactical"),
     poiDisplaySize: document.getElementById("poiDisplaySize"),
+    poiTextSize: document.getElementById("poiTextSize"),
     poiX: document.getElementById("poiX"),
     poiY: document.getElementById("poiY"),
     poiDescription: document.getElementById("poiDescription"),
@@ -217,6 +218,7 @@
     quickPoiStrategicValueLabel: document.getElementById("quickPoiStrategicValueLabel"),
     quickPoiTactical: document.getElementById("quickPoiTactical"),
     quickPoiDisplaySize: document.getElementById("quickPoiDisplaySize"),
+    quickPoiTextSize: document.getElementById("quickPoiTextSize"),
     quickPoiDescription: document.getElementById("quickPoiDescription"),
     quickPoiFullEditBtn: document.getElementById("quickPoiFullEditBtn"),
     quickPoiDeleteBtn: document.getElementById("quickPoiDeleteBtn")
@@ -349,7 +351,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.3-prototype";
+    clone.meta.version = "0.4.4-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -378,6 +380,7 @@
         strategicTier: "minor",
         strategicValue: 0,
         tacticalValue: 0,
+        textSize: 1,
         x: .5,
         y: .5,
         ...poi,
@@ -395,6 +398,7 @@
           factionId: customColor ? "neutral" : poi.factionId,
           color: poi.color || (customColor ? "#c7d2e0" : ""),
           strategicValue: customColor ? 0 : Number(poi.strategicValue || 0),
+          textSize: clamp(Number(poi.textSize ?? 1), 0.5, 3),
           modelTemplateId: (clone.modelTemplates || []).some(t => t.id === (poi.modelTemplateId || poi.iconId) && t.type === normalizePoiTypeId(poi.type))
             ? (poi.modelTemplateId || poi.iconId)
             : (clone.modelTemplates || []).find(t => t.type === normalizePoiTypeId(poi.type))?.id || clone.modelTemplates[0]?.id
@@ -1919,6 +1923,10 @@ function poiDisplaySizeValue(poi) {
   return clamp(Number(poi.displaySize || defaultPoiDisplaySize(poi.type, poi.strategicTier, poi.modelTemplateId)), 0.25, 3);
 }
 
+function poiTextSizeValue(poi) {
+  return clamp(Number(poi.textSize ?? 1), 0.5, 3);
+}
+
 function drawPoisOnFlatMap(ctx, rect, bodyId) {
   const pois = poisForBody(bodyId, { visibleOnly: true }).filter(shouldRenderPoiOnMap);
   const lod = flatMapDetailLevel();
@@ -2889,13 +2897,15 @@ function roundRectPath(ctx, x, y, w, h, r) {
     ctx.shadowBlur = 0;
 
     if (lod >= 2 && !state.settings.disablePois && !state.settings.disableNames) {
-      ctx.font = `${lod >= 3 ? 12 : 11}px Arial Narrow, Bahnschrift, sans-serif`;
+      const textScale = poiTextSizeValue(poi);
+      const fontSize = Math.round((lod >= 3 ? 12 : 11) * textScale);
+      ctx.font = `${fontSize}px Arial Narrow, Bahnschrift, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillStyle = "rgba(244,248,255,.92)";
       ctx.shadowColor = "rgba(0,0,0,.95)";
-      ctx.shadowBlur = 7;
-      ctx.fillText(poi.name.toUpperCase(), 0, size + 7);
+      ctx.shadowBlur = Math.max(7, Math.round(fontSize * .58));
+      ctx.fillText(poi.name.toUpperCase(), 0, size + Math.max(7, Math.round(fontSize * .38)));
     }
     ctx.restore();
   }
@@ -3498,6 +3508,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.quickPoiStrategic.value = Number(poi?.strategicValue ?? STRATEGIC_TIERS.find(t => t.id === els.quickPoiStrategicTier.value)?.value ?? 1);
     els.quickPoiTactical.value = Number(poi?.tacticalValue || 0);
     els.quickPoiDisplaySize.value = Number(poi?.displaySize || defaultPoiDisplaySize(els.quickPoiType.value, els.quickPoiStrategicTier.value, poi?.modelTemplateId || els.quickPoiIcon.value)).toFixed(2);
+    els.quickPoiTextSize.value = Number(poi?.textSize ?? 1).toFixed(2);
     els.quickPoiDescription.value = poi?.description || "";
     updateQuickPoiFormMode();
     updateIconPreview(els.quickPoiIcon, els.quickPoiIconPreview, els.quickPoiOwner, els.quickPoiColor, els.quickPoiType);
@@ -3531,6 +3542,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       strategicValue: poiUsesCustomColor(typeId) ? 0 : clamp(Number(els.quickPoiStrategic.value || 0), 0, 100),
       tacticalValue: Number(els.quickPoiTactical.value || 0),
       displaySize: clamp(Number(els.quickPoiDisplaySize.value || defaultPoiDisplaySize(typeId, els.quickPoiStrategicTier.value, els.quickPoiIcon.value)), 0.25, 3),
+      textSize: clamp(Number(els.quickPoiTextSize.value || 1), 0.5, 3),
       sectorId: null,
       x: clamp(Number(els.quickPoiX.value || .5), 0, 1),
       y: clamp(Number(els.quickPoiY.value || .5), 0, 1),
@@ -3598,6 +3610,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.poiVisibility.value = "public";
     els.poiTactical.value = "1";
     els.poiDisplaySize.value = String(defaultPoiDisplaySize("tactical", "minor", defaultIconForType("tactical")));
+    els.poiTextSize.value = "1";
     els.poiX.value = state.planetPlacement?.x?.toFixed(3) || "0.5";
     els.poiY.value = state.planetPlacement?.y?.toFixed(3) || "0.5";
     els.poiDescription.value = "";
@@ -3646,6 +3659,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       strategicValue: poiUsesCustomColor(typeId) ? 0 : clamp(strategicValue, 0, state.role === "pseudo" ? 1 : 100),
       tacticalValue: Number(els.poiTactical.value || 0),
       displaySize: clamp(Number(els.poiDisplaySize.value || defaultPoiDisplaySize(typeId, els.poiStrategicTier.value, els.poiModel.value)), 0.25, 3),
+      textSize: clamp(Number(els.poiTextSize.value || 1), 0.5, 3),
       sectorId: null,
       x: clamp(Number(els.poiX.value || .5), 0, 1),
       y: clamp(Number(els.poiY.value || .5), 0, 1),
@@ -4194,6 +4208,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.poiStrategic.value = Number(poi.strategicValue || 0);
     els.poiTactical.value = Number(poi.tacticalValue || 0);
     els.poiDisplaySize.value = Number(poi.displaySize || defaultPoiDisplaySize(poi.type, poi.strategicTier, poi.modelTemplateId)).toFixed(2);
+    els.poiTextSize.value = Number(poi.textSize ?? 1).toFixed(2);
     els.poiX.value = Number(poi.x || 0.5).toFixed(3);
     els.poiY.value = Number(poi.y || 0.5).toFixed(3);
     els.poiDescription.value = poi.description || "";

@@ -1,5 +1,11 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.4-prototype
+- Added editable POI label text size in the Admin Console POI editor.
+- Added editable POI label text size in the Quick Create / Quick Edit panel.
+- Label text size is independent from icon Display Size and works in both flat-map and globe rendering.
+- Existing POIs migrate to a default text-size multiplier of 1.00.
+
 ## v0.4.3-prototype
 - Fixed Delete Celestial Body on the shared website.
 - Deleted seeded moons and Waystations now remain deleted after Supabase saves, Realtime refreshes, and page reloads.
