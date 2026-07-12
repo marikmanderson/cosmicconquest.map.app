@@ -165,6 +165,9 @@
     bodyEditOrbitRadius: document.getElementById("bodyEditOrbitRadius"),
     bodyEditOrbitSpeed: document.getElementById("bodyEditOrbitSpeed"),
     bodyEditWeight: document.getElementById("bodyEditWeight"),
+    bodyEditAsteroidDensitySection: document.getElementById("bodyEditAsteroidDensitySection"),
+    bodyEditAsteroidDensity: document.getElementById("bodyEditAsteroidDensity"),
+    bodyEditAsteroidDensityValue: document.getElementById("bodyEditAsteroidDensityValue"),
     bodyEditDescription: document.getElementById("bodyEditDescription"),
     bodyEditStatus: document.getElementById("bodyEditStatus"),
     bodyEditControlOverrideSection: document.getElementById("bodyEditControlOverrideSection"),
@@ -351,7 +354,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.4-prototype";
+    clone.meta.version = "0.4.5-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -372,7 +375,13 @@
     // Harden older saves so a half-migrated localStorage file cannot blank the canvas.
     clone.bodies = clone.bodies
       .filter(body => body && body.id && body.type)
-      .map(body => ({ ...body, lore: normalizeBodyLore(body.lore || body) }));
+      .map(body => ({
+        ...body,
+        lore: normalizeBodyLore(body.lore || body),
+        ...(body.id === "rantel-cluster"
+          ? { asteroidVisualCount: clamp(Math.round(Number(body.asteroidVisualCount ?? 340)), 100, 1200) }
+          : {})
+      }));
     clone.pois = clone.pois
       .filter(poi => poi && poi.id && poi.bodyId)
       .map(poi => ({
@@ -684,6 +693,7 @@
     els.bodyForm?.addEventListener("submit", onBodySubmit);
     els.deleteBodyBtn?.addEventListener("click", onDeleteBody);
     els.bodyEditSelect?.addEventListener("change", () => loadBodyIntoForm(els.bodyEditSelect.value));
+    els.bodyEditAsteroidDensity?.addEventListener("input", updateAsteroidDensityReadout);
     els.bodyEditControlOverride?.addEventListener("change", updateBodyControlOverrideAvailability);
     els.bodyEditControlFields?.addEventListener("input", updateBodyControlOverrideTotal);
     els.exportDataBtn.addEventListener("click", onExportData);
@@ -1150,7 +1160,7 @@ function updatePlanetViewUi() {
     ctx.ellipse(center.x, center.y, radius, radius * 0.64, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    const asteroidCount = 340;
+    const asteroidCount = clamp(Math.round(Number(belt.asteroidVisualCount ?? 340)), 100, 1200);
     for (let i = 0; i < asteroidCount; i++) {
       const p = pseudoPoint(i + 2200);
       const angle = p.x * Math.PI * 2 + time + (i % 7) * .006;
@@ -3953,6 +3963,26 @@ function roundRectPath(ctx, x, y, w, h, r) {
     updateBodyControlOverrideAvailability();
   }
 
+  function bodySupportsAsteroidDensity(body) {
+    return Boolean(body && body.id === "rantel-cluster");
+  }
+
+  function updateAsteroidDensityReadout() {
+    if (!els.bodyEditAsteroidDensity || !els.bodyEditAsteroidDensityValue) return;
+    const count = clamp(Math.round(Number(els.bodyEditAsteroidDensity.value || 340)), 100, 1200);
+    els.bodyEditAsteroidDensityValue.textContent = `${count} asteroid${count === 1 ? "" : "s"}`;
+  }
+
+  function renderAsteroidDensityEditor(body) {
+    if (!els.bodyEditAsteroidDensitySection || !els.bodyEditAsteroidDensity) return;
+    const eligible = bodySupportsAsteroidDensity(body);
+    els.bodyEditAsteroidDensitySection.classList.toggle("hidden", !eligible);
+    els.bodyEditAsteroidDensity.disabled = !eligible;
+    if (!eligible) return;
+    els.bodyEditAsteroidDensity.value = String(clamp(Math.round(Number(body.asteroidVisualCount ?? 340)), 100, 1200));
+    updateAsteroidDensityReadout();
+  }
+
   function bodyUsesPrimarySystemOrbit(body) {
     return Boolean(body && (
       !body.parentBodyId
@@ -3977,6 +4007,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.bodyEditOrbitRadius.value = Number(orbitRadius);
     els.bodyEditOrbitSpeed.value = Number(orbitSpeed);
     els.bodyEditWeight.value = Number(body.strategicWeight || 0);
+    renderAsteroidDensityEditor(body);
     if (els.bodyEditDescription) els.bodyEditDescription.value = body.description || "";
     els.bodyEditStatus.value = body.statusLabel || "";
     renderBodyControlOverrideEditor(body);
@@ -4019,6 +4050,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
       body.moonOrbitSpeed = orbitSpeed;
     }
     body.strategicWeight = Math.max(0, Number(els.bodyEditWeight.value || 0));
+    if (bodySupportsAsteroidDensity(body)) {
+      body.asteroidVisualCount = clamp(Math.round(Number(els.bodyEditAsteroidDensity?.value || 340)), 100, 1200);
+    }
     body.description = els.bodyEditDescription?.value.trim() || "";
     body.statusLabel = els.bodyEditStatus.value.trim();
 

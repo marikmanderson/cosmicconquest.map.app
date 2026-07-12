@@ -1,5 +1,11 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.5-prototype
+- Added a Rantel Cluster-only visual asteroid-density slider to the Celestial Bodies Editor.
+- The slider controls 100–1,200 decorative System View asteroids and defaults to 340.
+- Asteroid density is visual only and does not alter faction control, strategic weight, or logistics calculations.
+- The value persists through local saves and the shared Supabase atlas JSON.
+
 ## v0.4.4-prototype
 - Added editable POI label text size in the Admin Console POI editor.
 - Added editable POI label text size in the Quick Create / Quick Edit panel.

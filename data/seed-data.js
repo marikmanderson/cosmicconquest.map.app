@@ -1,7 +1,7 @@
 window.CC_SEED_DATA = {
   meta: {
     appName: "Cosmic Conquest — Osiris Command Atlas",
-    version: "0.4.4-prototype",
+    version: "0.4.5-prototype",
     notes: "Client-side campaign atlas prototype with flat tactical map + globe theater. Persisted with localStorage. Export JSON before heavy edits."
   },
   factions: [
@@ -160,6 +160,7 @@ window.CC_SEED_DATA = {
       orbitRadius: 720,
       orbitSpeed: 0.000008,
       orbitOffset: 0.1,
+      asteroidVisualCount: 340,
       strategicWeight: 12,
       statusLabel: "Outer Belt Conflict Zone"
     },
