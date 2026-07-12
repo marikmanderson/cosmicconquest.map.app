@@ -5,6 +5,6 @@ window.CC_BACKEND_CONFIG = {
   enabled: true,
   supabaseUrl: "https://koxwnagkcqpkthilcktn.supabase.co",
   supabaseAnonKey: "sb_publishable_ix9ivn5XPdaRSiUh_hTfWA_uDUBGldo",
-  discordRedirectUrl: "https://marikmanderson.github.io/cosmicconquest.map.app/",
+  discordRedirectUrl: "http://www.cosmicconquest-map.com/",
   realtime: true
 };
