@@ -2,11 +2,12 @@
 
 The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.4.5
+## What is in v0.4.6
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Rantel Cluster-only asteroid-density slider for controlling decorative System View belt population.
 - Planet Theater with rotating globe selection for planets and moons.
+- Shared Supabase moon textures render in both Flat Map and Globe View and can be replaced from the Celestial Bodies Editor.
 - Clean POI testing state: all seeded POIs and seeded terrain have been removed.
 - Web Admin quick POI workflow from Planet Theater:
   - Right-click empty globe territory to quick-create a POI.
@@ -73,7 +74,7 @@ Configure Supabase using `SUPABASE_SETUP.md` to enable Discord accounts, shared 
 
 The Celestial Bodies Editor includes a public description field and optional faction-control override for every body. Enabled percentages must total 100% and distribute the selected body’s Strategic Weight between factions. The override replaces automatic POI and sector control for that body, while separately overridden linked bodies can contribute to an automatic parent-body calculation.
 
-## New in v0.4.5
+## New in v0.4.6
 
 - Added an independent **Label Text Size** multiplier to the full POI Admin Console editor.
 - Added the same control to the POI Quick Create / Quick Edit panel.

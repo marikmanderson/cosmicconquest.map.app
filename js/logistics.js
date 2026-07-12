@@ -539,7 +539,10 @@
   function scheduleSiteSync(){ if(!state.backendEnabled||!state.session||!isAdmin())return; clearTimeout(state.syncTimer); state.syncTimer=setTimeout(()=>syncSitesFromAtlas(false),1200); }
 
   async function uploadAtlasTexture(file, bodyId) {
-    if (!file || !state.backendEnabled || !state.client || !state.session || !isAdmin()) return null;
+    if (!file) return null;
+    if (!state.backendEnabled || !state.client) return null;
+    if (!state.session) throw new Error("Sign in with Discord before uploading a shared moon texture.");
+    if (!isAdmin()) throw new Error("An Admin or Root Discord role is required to upload shared moon textures.");
     const safeName = String(file.name || "planet-map.png").toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
     const path = `${bodyId}/${Date.now()}-${safeName}`;
     const { error } = await state.client.storage.from("atlas-textures").upload(path, file, {
@@ -549,6 +552,7 @@
     });
     if (error) throw error;
     const { data } = state.client.storage.from("atlas-textures").getPublicUrl(path);
+    if (!data?.publicUrl) throw new Error("Supabase uploaded the file but did not return a public texture URL.");
     return { path, url: data.publicUrl };
   }
 

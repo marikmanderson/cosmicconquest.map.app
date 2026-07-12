@@ -168,6 +168,10 @@
     bodyEditAsteroidDensitySection: document.getElementById("bodyEditAsteroidDensitySection"),
     bodyEditAsteroidDensity: document.getElementById("bodyEditAsteroidDensity"),
     bodyEditAsteroidDensityValue: document.getElementById("bodyEditAsteroidDensityValue"),
+    bodyEditTextureSection: document.getElementById("bodyEditTextureSection"),
+    bodyEditTexture: document.getElementById("bodyEditTexture"),
+    bodyEditTextureStatus: document.getElementById("bodyEditTextureStatus"),
+    bodyEditTexturePreview: document.getElementById("bodyEditTexturePreview"),
     bodyEditDescription: document.getElementById("bodyEditDescription"),
     bodyEditStatus: document.getElementById("bodyEditStatus"),
     bodyEditControlOverrideSection: document.getElementById("bodyEditControlOverrideSection"),
@@ -354,7 +358,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.5-prototype";
+    clone.meta.version = "0.4.6-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -1330,7 +1334,7 @@ function updatePlanetViewUi() {
     const texture = systemTextureForBody(body);
     if (!texture) return false;
     ctx.save();
-    ctx.globalAlpha = body.textureDataUrl || body.template === "custom" ? .56 : .32;
+    ctx.globalAlpha = body.textureUrl || body.textureDataUrl || body.template === "custom" ? .56 : .32;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(texture, x - r * 1.04, y - r * 1.04, r * 2.08, r * 2.08);
@@ -2041,7 +2045,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function textureKeyForBody(body) {
-    if (body?.textureDataUrl) return body.id;
+    if (body?.textureUrl || body?.textureDataUrl) return body.id;
     const direct = {
       "osiris-prime": "osiris-prime",
       vau: "vau",
@@ -2052,6 +2056,85 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (["barren", "oceanic", "urban", "lush"].includes(body.template)) return body.template;
     const byTemplate = { ice: "osiris-prime", desert: "vau", jungle: "brekka", lush: "lush", "gas-giant": "vulkan" };
     return byTemplate[body.template] || null;
+  }
+
+  const MAX_SHARED_TEXTURE_BYTES = 50 * 1024 * 1024;
+
+  function customTextureSource(body) {
+    return body?.textureUrl || body?.textureDataUrl || "";
+  }
+
+  function cacheBodyTexture(body, source, { showError = false } = {}) {
+    if (!body?.id || !source) return;
+    delete state.textures[body.id];
+    delete state.textureCanvases[body.id];
+    delete state.systemTextureCanvases[body.id];
+
+    const img = new Image();
+    img.onload = () => {
+      state.textures[body.id] = img;
+      makeSystemTexture(body.id, img);
+      makeGlobeRenderTexture(body.id, img);
+      state.planetDirty = true;
+      if (els.bodyEditSelect?.value === body.id) renderBodyTextureEditor(body);
+      renderAllPanels();
+    };
+    img.onerror = () => {
+      console.warn(`Could not load the custom texture for ${body.name || body.id}.`, source);
+      if (showError) flashMessage(`The texture for ${body.name || body.id} was saved, but the browser could not load its image URL.`);
+    };
+    img.src = source;
+  }
+
+  function inspectTextureFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return reject(new Error("Choose an image file first."));
+      if (!/^image\/(png|jpeg|webp)$/i.test(file.type || "")) {
+        return reject(new Error("Moon textures must be PNG, JPEG, or WebP images."));
+      }
+      if (file.size > MAX_SHARED_TEXTURE_BYTES) {
+        return reject(new Error("Moon textures must be 50 MB or smaller for the shared Supabase texture bucket."));
+      }
+      const objectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        URL.revokeObjectURL(objectUrl);
+        if (!width || !height) return reject(new Error("The selected texture has invalid dimensions."));
+        const ratio = width / height;
+        if (Math.abs(ratio - 2) > 0.05) {
+          return reject(new Error(`Moon textures must use a 2:1 equirectangular layout. This file is ${width}×${height}.`));
+        }
+        resolve({ width, height });
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("The selected texture could not be read as an image."));
+      };
+      image.src = objectUrl;
+    });
+  }
+
+  async function uploadOrEmbedBodyTexture(file, bodyId) {
+    await inspectTextureFile(file);
+    if (window.CC_LOGISTICS?.uploadAtlasTexture) {
+      try {
+        const uploaded = await window.CC_LOGISTICS.uploadAtlasTexture(file, bodyId);
+        if (uploaded?.url) {
+          return { textureUrl: uploaded.url, texturePath: uploaded.path || null, textureDataUrl: null, shared: true };
+        }
+      } catch (err) {
+        console.warn("Shared texture upload failed; keeping a local browser copy.", err);
+        flashMessage(`Shared texture upload failed: ${err.message || err}. A local copy will be used until an Admin or Root account publishes it.`);
+      }
+    }
+    return {
+      textureUrl: null,
+      texturePath: null,
+      textureDataUrl: await readFileAsDataUrl(file),
+      shared: false
+    };
   }
 
   function loadTextures() {
@@ -2076,17 +2159,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
       img.src = src;
     });
     for (const body of state.data.bodies || []) {
-      const textureSource = body.textureUrl || body.textureDataUrl;
+      const textureSource = customTextureSource(body);
       if (!textureSource) continue;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        state.textures[body.id] = img;
-        makeSystemTexture(body.id, img);
-        makeGlobeRenderTexture(body.id, img);
-        state.planetDirty = true;
-      };
-      img.src = textureSource;
+      cacheBodyTexture(body, textureSource);
     }
   }
 
@@ -3724,19 +3799,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
     let textureDataUrl = null;
     let textureUrl = null;
     let texturePath = null;
-
-    if (textureFile && window.CC_LOGISTICS?.uploadAtlasTexture) {
+    if (textureFile) {
       try {
-        const uploaded = await window.CC_LOGISTICS.uploadAtlasTexture(textureFile, moonId);
-        textureUrl = uploaded?.url || null;
-        texturePath = uploaded?.path || null;
+        ({ textureDataUrl, textureUrl, texturePath } = await uploadOrEmbedBodyTexture(textureFile, moonId));
       } catch (err) {
-        console.warn("Shared texture upload failed; keeping a local browser copy.", err);
-        flashMessage(`Shared texture upload failed: ${err.message || err}. The moon will use a local-only texture until uploaded again.`);
+        return flashMessage(err.message || String(err));
       }
-    }
-    if (textureFile && !textureUrl) {
-      textureDataUrl = await readFileAsDataUrl(textureFile);
     }
 
     state.data.meta ??= {};
@@ -3762,19 +3830,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
     };
 
     state.data.bodies.push(newMoon);
-    const textureSource = textureUrl || textureDataUrl;
-    if (textureSource) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        state.textures[newMoon.id] = img;
-        makeSystemTexture(newMoon.id, img);
-        makeGlobeRenderTexture(newMoon.id, img);
-        state.planetDirty = true;
-        renderAllPanels();
-      };
-      img.src = textureSource;
-    }
+    const textureSource = customTextureSource(newMoon);
+    if (textureSource) cacheBodyTexture(newMoon, textureSource, { showError: true });
     saveData();
     state.selectedBodyId = newMoon.id;
     renderAllPanels();
@@ -3963,6 +4020,43 @@ function roundRectPath(ctx, x, y, w, h, r) {
     updateBodyControlOverrideAvailability();
   }
 
+  function bodySupportsTextureEditing(body) {
+    return Boolean(body && body.type === "moon");
+  }
+
+  function renderBodyTextureEditor(body) {
+    if (!els.bodyEditTextureSection || !els.bodyEditTexture) return;
+    const eligible = bodySupportsTextureEditing(body);
+    els.bodyEditTextureSection.classList.toggle("hidden", !eligible);
+    els.bodyEditTexture.disabled = !eligible;
+    els.bodyEditTexture.value = "";
+    if (!eligible) {
+      if (els.bodyEditTexturePreview) {
+        els.bodyEditTexturePreview.removeAttribute("src");
+        els.bodyEditTexturePreview.classList.add("hidden");
+      }
+      return;
+    }
+
+    const source = customTextureSource(body);
+    if (els.bodyEditTextureStatus) {
+      els.bodyEditTextureStatus.textContent = body.textureUrl
+        ? "A shared Supabase texture is currently assigned. Choose a new 2:1 image to replace it."
+        : body.textureDataUrl
+          ? "A local-only texture is currently assigned. Choose a new image, or save while signed in as Admin/Root to publish it."
+          : "No custom texture is assigned. The moon is using its procedural/template fallback.";
+    }
+    if (els.bodyEditTexturePreview) {
+      if (source) {
+        els.bodyEditTexturePreview.src = source;
+        els.bodyEditTexturePreview.classList.remove("hidden");
+      } else {
+        els.bodyEditTexturePreview.removeAttribute("src");
+        els.bodyEditTexturePreview.classList.add("hidden");
+      }
+    }
+  }
+
   function bodySupportsAsteroidDensity(body) {
     return Boolean(body && body.id === "rantel-cluster");
   }
@@ -4008,6 +4102,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.bodyEditOrbitSpeed.value = Number(orbitSpeed);
     els.bodyEditWeight.value = Number(body.strategicWeight || 0);
     renderAsteroidDensityEditor(body);
+    renderBodyTextureEditor(body);
     if (els.bodyEditDescription) els.bodyEditDescription.value = body.description || "";
     els.bodyEditStatus.value = body.statusLabel || "";
     renderBodyControlOverrideEditor(body);
@@ -4029,7 +4124,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     updateBodyDeleteState(body);
   }
 
-  function onBodySubmit(event) {
+  async function onBodySubmit(event) {
     event.preventDefault();
     if (!isAdmin()) return flashMessage("Celestial body editing requires Admin or Root Mode.");
     const body = bodyById(els.bodyEditSelect.value);
@@ -4063,6 +4158,20 @@ function roundRectPath(ctx, x, y, w, h, r) {
         return flashMessage(`Faction-control percentages total ${Math.round(total * 10) / 10}%. They must equal exactly 100%.`);
       }
       body.controlOverride = { enabled, percentages };
+    }
+
+    const replacementTexture = bodySupportsTextureEditing(body) ? els.bodyEditTexture?.files?.[0] : null;
+    if (replacementTexture) {
+      try {
+        const uploaded = await uploadOrEmbedBodyTexture(replacementTexture, body.id);
+        body.textureUrl = uploaded.textureUrl;
+        body.texturePath = uploaded.texturePath;
+        body.textureDataUrl = uploaded.textureDataUrl;
+        body.template = "custom";
+        cacheBodyTexture(body, customTextureSource(body), { showError: true });
+      } catch (err) {
+        return flashMessage(err.message || String(err));
+      }
     }
 
     body.lore = {

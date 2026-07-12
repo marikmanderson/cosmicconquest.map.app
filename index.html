@@ -269,6 +269,17 @@
                   <input id="bodyEditAsteroidDensity" type="range" min="100" max="1200" step="20" value="340" />
                   <div class="asteroid-density-scale"><span>Sparser</span><span>Denser</span></div>
                 </section>
+                <section id="bodyEditTextureSection" class="full-field body-texture-editor hidden">
+                  <div class="body-texture-editor-copy">
+                    <strong>Moon Surface Texture</strong>
+                    <p id="bodyEditTextureStatus">Choose a 2:1 equirectangular PNG, JPEG, or WebP image to replace this moon’s flat-map and globe texture.</p>
+                  </div>
+                  <div class="body-texture-editor-controls">
+                    <label>Replace Texture<input id="bodyEditTexture" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+                    <img id="bodyEditTexturePreview" class="body-texture-preview hidden" alt="Current moon surface texture preview" />
+                  </div>
+                  <p class="form-note">The selected image is uploaded to Supabase Storage when signed in with an Admin or Root Discord account. Maximum shared file size: 50 MB. Required projection: 2:1 equirectangular.</p>
+                </section>
                 <label class="full-field">Public Description / Briefing<textarea id="bodyEditDescription" rows="5" placeholder="Enter the descriptive paragraph shown to players when this planet, moon, station, or other body is selected."></textarea></label>
                 <label class="full-field">Status Label<input id="bodyEditStatus" placeholder="Example: Pacification Zone" /></label>
                 <section id="bodyEditControlOverrideSection" class="full-field body-control-override hidden">
@@ -298,7 +309,7 @@
                 <label>Population<input id="bodyEditPopulation" placeholder="Example: 8.4 billion" /></label>
                 <label>Major Imports<input id="bodyEditMajorImports" placeholder="Example: bacta, reactor parts" /></label>
                 <label>Major Exports<input id="bodyEditMajorExports" placeholder="Example: tibanna, ores" /></label>
-                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Faction-control overrides are available for every celestial body and must total exactly 100% when enabled. The asteroid-density slider appears only when the Rantel Cluster is selected.</p>
+                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Faction-control overrides are available for every celestial body and must total exactly 100% when enabled. Moon textures can be replaced from this editor. The asteroid-density slider appears only when the Rantel Cluster is selected.</p>
                 <div class="form-actions full-field">
                   <button class="primary-button" type="submit">Save Body Settings</button>
                   <button class="danger-button" type="button" id="deleteBodyBtn">Delete Celestial Body</button>

@@ -1427,3 +1427,46 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
     flex-direction: column;
   }
 }
+
+
+.body-texture-editor {
+  border: 1px solid rgba(109, 247, 255, .22);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(7, 20, 34, .62);
+  display: grid;
+  gap: 12px;
+}
+
+.body-texture-editor-copy strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #d8f5ff;
+}
+
+.body-texture-editor-copy p,
+.body-texture-editor > .form-note {
+  margin: 0;
+}
+
+.body-texture-editor-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 280px);
+  gap: 14px;
+  align-items: center;
+}
+
+.body-texture-preview {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(160, 220, 255, .32);
+  background: rgba(0, 0, 0, .35);
+}
+
+@media (max-width: 760px) {
+  .body-texture-editor-controls {
+    grid-template-columns: 1fr;
+  }
+}

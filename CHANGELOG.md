@@ -1,5 +1,12 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.6-prototype
+- Fixed uploaded moon textures not being selected by the Flat Map and Globe renderers when the texture came from a shared Supabase URL.
+- Added a moon-only texture replacement control to the Celestial Bodies Editor.
+- Added a current-texture preview and status readout for moons.
+- Added 2:1 projection, supported-format, and 50 MB shared-upload validation.
+- Improved Supabase upload errors for signed-out or insufficient-role sessions.
+
 ## v0.4.5-prototype
 - Added a Rantel Cluster-only visual asteroid-density slider to the Celestial Bodies Editor.
 - The slider controls 100–1,200 decorative System View asteroids and defaults to 340.
