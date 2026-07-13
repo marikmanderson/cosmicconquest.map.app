@@ -2,7 +2,7 @@
 
 The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.4.6
+## What is in v0.4.7
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Rantel Cluster-only asteroid-density slider for controlling decorative System View belt population.
@@ -80,3 +80,9 @@ The Celestial Bodies Editor includes a public description field and optional fac
 - Added the same control to the POI Quick Create / Quick Edit panel.
 - Text size applies to POI labels in both Flat Map and Globe views without changing icon size.
 - Existing POIs default to a text-size multiplier of `1.00`.
+
+
+## New in v0.4.7
+
+- Osiris can be selected in Admin Console → Celestial Bodies Editor and resized with Visual Size.
+- The Selected Asset information panel now scrolls independently when its briefing is taller than the right rail.

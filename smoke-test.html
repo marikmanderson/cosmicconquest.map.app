@@ -1,12 +1,12 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Atlas Smoke Test</title></head>
-<body style="font-family:monospace;background:#07101b;color:#dff;padding:20px">
-<h1>Cosmic Conquest Atlas v0.4.6 Smoke Test</h1>
-<pre id="out">Loading...</pre>
-<script src="data/seed-data.js"></script>
+<meta charset="utf-8">
+<title>Cosmic Conquest Atlas v0.4.7 Smoke Test</title>
+<h1>Cosmic Conquest Atlas v0.4.7 Smoke Test</h1>
 <script>
-const out = document.getElementById('out');
-const bodies = window.CC_SEED_DATA.bodies.filter(b => ['planet','moon'].includes(b.type)).map(b => b.name).join('\n - ');
-out.textContent = 'Seed data loaded. Theater bodies:\n - ' + bodies + '\n\nSeeded POIs: ' + window.CC_SEED_DATA.pois.length + '\nSeeded terrain: ' + window.CC_SEED_DATA.terrain.length + '\n\nOpen index.html to test full canvas rendering.';
-</script><p>v0.4.6 check: bodyEditTexture moon texture replacement control is present.</p>
-</body></html>
+fetch('js/app.js').then(r=>r.text()).then(t=>{
+  document.body.insertAdjacentHTML('beforeend', '<p>Star editor: ' + (/\["star", "planet", "moon", "station", "asteroid_belt"\]/.test(t) ? 'PASS' : 'FAIL') + '</p>');
+});
+fetch('css/styles.css').then(r=>r.text()).then(t=>{
+  document.body.insertAdjacentHTML('beforeend', '<p>Selected Asset scrollbar: ' + (t.includes('.info-panel > #selectedInfo') ? 'PASS' : 'FAIL') + '</p>');
+});
+</script>

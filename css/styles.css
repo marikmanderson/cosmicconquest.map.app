@@ -1470,3 +1470,43 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
     grid-template-columns: 1fr;
   }
 }
+
+/* v0.4.7 — keep long Selected Asset briefings contained in the right rail. */
+.info-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.info-panel > .section-header {
+  flex: 0 0 auto;
+}
+
+.info-panel > #selectedInfo {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(109, 247, 255, .58) rgba(255, 255, 255, .06);
+}
+
+.info-panel > #selectedInfo::-webkit-scrollbar {
+  width: 9px;
+}
+
+.info-panel > #selectedInfo::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, .05);
+  border-radius: 999px;
+}
+
+.info-panel > #selectedInfo::-webkit-scrollbar-thumb {
+  background: rgba(109, 247, 255, .46);
+  border: 2px solid rgba(3, 13, 24, .72);
+  border-radius: 999px;
+}
+
+.info-panel > #selectedInfo::-webkit-scrollbar-thumb:hover {
+  background: rgba(109, 247, 255, .72);
+}

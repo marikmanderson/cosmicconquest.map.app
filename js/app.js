@@ -358,7 +358,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.6-prototype";
+    clone.meta.version = "0.4.7-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -535,7 +535,7 @@
   }
 
   function bodiesForBodyEditor() {
-    return state.data.bodies.filter(body => ["planet", "moon", "station", "asteroid_belt"].includes(body.type));
+    return state.data.bodies.filter(body => ["star", "planet", "moon", "station", "asteroid_belt"].includes(body.type));
   }
 
   function bodiesForPoiSelector() {
@@ -4090,7 +4090,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!body) return;
     els.bodyEditSelect.value = body.id;
     els.bodyEditName.value = body.name || "";
+    els.bodyEditRadius.max = body.type === "star" ? "240" : "120";
     els.bodyEditRadius.value = Number(body.radius || 10);
+    const isSystemStar = body.type === "star";
     const usesPrimaryOrbit = bodyUsesPrimarySystemOrbit(body);
     const orbitRadius = usesPrimaryOrbit
       ? (body.orbitRadius || 100)
@@ -4098,8 +4100,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const orbitSpeed = usesPrimaryOrbit
       ? (body.orbitSpeed || 0.00002)
       : (body.moonOrbitSpeed || body.satelliteOrbitSpeed || body.orbitSpeed || 0.00006);
-    els.bodyEditOrbitRadius.value = Number(orbitRadius);
-    els.bodyEditOrbitSpeed.value = Number(orbitSpeed);
+    els.bodyEditOrbitRadius.disabled = isSystemStar;
+    els.bodyEditOrbitSpeed.disabled = isSystemStar;
+    els.bodyEditOrbitRadius.title = isSystemStar ? "Osiris is fixed at the center of the system." : "";
+    els.bodyEditOrbitSpeed.title = isSystemStar ? "Osiris is fixed at the center of the system." : "";
+    els.bodyEditOrbitRadius.value = isSystemStar ? 0 : Number(orbitRadius);
+    els.bodyEditOrbitSpeed.value = isSystemStar ? 0 : Number(orbitSpeed);
     els.bodyEditWeight.value = Number(body.strategicWeight || 0);
     renderAsteroidDensityEditor(body);
     renderBodyTextureEditor(body);
@@ -4131,18 +4137,21 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!body) return flashMessage("Select a celestial body to edit.");
     body.name = els.bodyEditName.value.trim() || body.name;
     body.shortName = body.shortName || body.name;
-    body.radius = clamp(Number(els.bodyEditRadius.value || body.radius || 10), 1, 120);
-    const orbitRadius = Math.max(1, Number(els.bodyEditOrbitRadius.value || 1));
-    const orbitSpeed = Math.max(0, Number(els.bodyEditOrbitSpeed.value || 0));
-    if (bodyUsesPrimarySystemOrbit(body)) {
-      body.orbitRadius = orbitRadius;
-      body.orbitSpeed = orbitSpeed;
-      // Remove stale satellite-orbit overrides created by older builds.
-      delete body.moonOrbitRadius;
-      delete body.moonOrbitSpeed;
-    } else {
-      body.moonOrbitRadius = orbitRadius;
-      body.moonOrbitSpeed = orbitSpeed;
+    const maximumRadius = body.type === "star" ? 240 : 120;
+    body.radius = clamp(Number(els.bodyEditRadius.value || body.radius || 10), 1, maximumRadius);
+    if (body.type !== "star") {
+      const orbitRadius = Math.max(1, Number(els.bodyEditOrbitRadius.value || 1));
+      const orbitSpeed = Math.max(0, Number(els.bodyEditOrbitSpeed.value || 0));
+      if (bodyUsesPrimarySystemOrbit(body)) {
+        body.orbitRadius = orbitRadius;
+        body.orbitSpeed = orbitSpeed;
+        // Remove stale satellite-orbit overrides created by older builds.
+        delete body.moonOrbitRadius;
+        delete body.moonOrbitSpeed;
+      } else {
+        body.moonOrbitRadius = orbitRadius;
+        body.moonOrbitSpeed = orbitSpeed;
+      }
     }
     body.strategicWeight = Math.max(0, Number(els.bodyEditWeight.value || 0));
     if (bodySupportsAsteroidDensity(body)) {

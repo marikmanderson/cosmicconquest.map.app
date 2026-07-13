@@ -1,5 +1,11 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.7-prototype
+- Added Osiris itself to the Celestial Bodies Editor.
+- Osiris Visual Size can now be adjusted from 1 to 240 while remaining fixed at the center of System View.
+- Disabled the irrelevant orbit-distance and orbit-speed fields while Osiris is selected.
+- Added an internal scrollbar to the Selected Asset panel for long briefings and metadata.
+
 ## v0.4.6-prototype
 - Fixed uploaded moon textures not being selected by the Flat Map and Globe renderers when the texture came from a shared Supabase URL.
 - Added a moon-only texture replacement control to the Celestial Bodies Editor.
