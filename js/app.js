@@ -108,6 +108,9 @@
     factionCode: document.getElementById("factionCode"),
     factionColor: document.getElementById("factionColor"),
     factionList: document.getElementById("factionList"),
+    factionMergeSource: document.getElementById("factionMergeSource"),
+    factionMergeTarget: document.getElementById("factionMergeTarget"),
+    mergeFactionBtn: document.getElementById("mergeFactionBtn"),
     poiForm: document.getElementById("poiForm"),
     poiId: document.getElementById("poiId"),
     poiName: document.getElementById("poiName"),
@@ -355,19 +358,40 @@
     return `<ul>${list.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
 
+  function bodyNameIsProtected(body) {
+    return Boolean(body && (
+      body.type === "planet"
+      || body.type === "star"
+      || body.id === "rantel-cluster"
+      || (body.type === "station" && body.parentBodyId === "rantel-cluster")
+    ));
+  }
+
+  function canonicalProtectedBodyName(body) {
+    if (!bodyNameIsProtected(body)) return body?.name || "";
+    return seed.bodies?.find(item => item.id === body.id)?.name || body.name || "";
+  }
+
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.7-prototype";
+    clone.meta.version = "0.4.8-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
+    clone.meta.deletedFactionIds = Array.isArray(clone.meta.deletedFactionIds)
+      ? [...new Set(clone.meta.deletedFactionIds.filter(Boolean))]
+      : [];
     const deletedBodyIds = new Set(clone.meta.deletedBodyIds);
+    const deletedFactionIds = new Set(clone.meta.deletedFactionIds);
     clone.visibilityStates = deepClone(seed.visibilityStates);
     clone.poiTypes = deepClone(seed.poiTypes);
     clone.modelTemplates = deepClone(seed.modelTemplates);
     clone.moonTemplates = mergeById(seed.moonTemplates, clone.moonTemplates);
-    clone.factions = mergeById(seed.factions, clone.factions);
+    clone.factions = mergeByIdPreservingCustomOrder(
+      (seed.factions || []).filter(faction => !deletedFactionIds.has(faction.id)),
+      (clone.factions || []).filter(faction => !deletedFactionIds.has(faction.id))
+    );
     clone.bodies = mergeById(
       (seed.bodies || []).filter(body => !deletedBodyIds.has(body.id)),
       (clone.bodies || []).filter(body => !deletedBodyIds.has(body.id))
@@ -379,13 +403,19 @@
     // Harden older saves so a half-migrated localStorage file cannot blank the canvas.
     clone.bodies = clone.bodies
       .filter(body => body && body.id && body.type)
-      .map(body => ({
-        ...body,
-        lore: normalizeBodyLore(body.lore || body),
-        ...(body.id === "rantel-cluster"
-          ? { asteroidVisualCount: clamp(Math.round(Number(body.asteroidVisualCount ?? 340)), 100, 1200) }
-          : {})
-      }));
+      .map(body => {
+        const protectedName = canonicalProtectedBodyName(body);
+        return {
+          ...body,
+          ...(bodyNameIsProtected(body)
+            ? { name: protectedName, shortName: seed.bodies?.find(item => item.id === body.id)?.shortName || protectedName }
+            : {}),
+          lore: normalizeBodyLore(body.lore || body),
+          ...(body.id === "rantel-cluster"
+            ? { asteroidVisualCount: clamp(Math.round(Number(body.asteroidVisualCount ?? 340)), 100, 1200) }
+            : {})
+        };
+      });
     clone.pois = clone.pois
       .filter(poi => poi && poi.id && poi.bodyId)
       .map(poi => ({
@@ -408,7 +438,7 @@
         const customColor = poiUsesCustomColor(poi.type);
         return {
           ...poi,
-          factionId: customColor ? "neutral" : poi.factionId,
+          factionId: customColor ? (clone.factions.some(f => f.id === "neutral") ? "neutral" : clone.factions[0]?.id) : poi.factionId,
           color: poi.color || (customColor ? "#c7d2e0" : ""),
           strategicValue: customColor ? 0 : Number(poi.strategicValue || 0),
           textSize: clamp(Number(poi.textSize ?? 1), 0.5, 3),
@@ -430,6 +460,23 @@
       byId.set(item.id, { ...(byId.get(item.id) || {}), ...deepClone(item) });
     }
     return [...byId.values()];
+  }
+
+  function mergeByIdPreservingCustomOrder(defaultItems = [], customItems = []) {
+    const defaults = new Map((defaultItems || []).filter(item => item?.id).map(item => [item.id, deepClone(item)]));
+    const result = [];
+    const seen = new Set();
+    for (const item of customItems || []) {
+      if (!item?.id || seen.has(item.id)) continue;
+      result.push({ ...(defaults.get(item.id) || {}), ...deepClone(item) });
+      seen.add(item.id);
+    }
+    for (const item of defaultItems || []) {
+      if (!item?.id || seen.has(item.id)) continue;
+      result.push(deepClone(item));
+      seen.add(item.id);
+    }
+    return result;
   }
 
   function saveData() {
@@ -669,6 +716,9 @@
     });
 
     els.factionForm.addEventListener("submit", onFactionSubmit);
+    els.mergeFactionBtn?.addEventListener("click", mergeSelectedFaction);
+    els.factionMergeSource?.addEventListener("change", keepFactionMergeTargetsDistinct);
+    els.factionMergeTarget?.addEventListener("change", keepFactionMergeTargetsDistinct);
     els.poiForm.addEventListener("submit", onPoiSubmit);
     els.newPoiBtn.addEventListener("click", clearPoiForm);
     els.deletePoiBtn.addEventListener("click", onDeletePoi);
@@ -3427,10 +3477,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function renderAdminLists() {
-    els.factionList.innerHTML = state.data.factions.map(faction => `
-      <div class="record-item">
+    els.factionList.innerHTML = state.data.factions.map((faction, index) => `
+      <div class="record-item faction-record-item">
         <span style="display:flex;align-items:center;gap:8px;"><span class="record-swatch" style="color:${faction.color};background:${faction.color}"></span>${escapeHtml(faction.name)}</span>
-        <button class="ghost-button" data-edit-faction="${escapeHtml(faction.id)}">Edit</button>
+        <div class="record-actions">
+          <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="-1" ${index === 0 ? "disabled" : ""} title="Move faction up">↑</button>
+          <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="1" ${index === state.data.factions.length - 1 ? "disabled" : ""} title="Move faction down">↓</button>
+          <button class="ghost-button" type="button" data-edit-faction="${escapeHtml(faction.id)}">Edit</button>
+        </div>
       </div>
     `).join("");
 
@@ -3443,6 +3497,86 @@ function roundRectPath(ctx, x, y, w, h, r) {
         els.factionColor.value = faction.color;
       });
     });
+
+    els.factionList.querySelectorAll("button[data-move-faction]").forEach(button => {
+      button.addEventListener("click", () => moveFaction(button.dataset.moveFaction, Number(button.dataset.moveDirection || 0)));
+    });
+
+    renderFactionMergeControls();
+  }
+
+  function renderFactionMergeControls() {
+    if (!els.factionMergeSource || !els.factionMergeTarget || !els.mergeFactionBtn) return;
+    const sourceBefore = els.factionMergeSource.value;
+    const targetBefore = els.factionMergeTarget.value;
+    const options = state.data.factions.map(faction => `<option value="${escapeHtml(faction.id)}">${escapeHtml(faction.name)}</option>`).join("");
+    els.factionMergeSource.innerHTML = options;
+    els.factionMergeTarget.innerHTML = options;
+    const ids = state.data.factions.map(faction => faction.id);
+    els.factionMergeSource.value = ids.includes(sourceBefore) ? sourceBefore : (ids[1] || ids[0] || "");
+    els.factionMergeTarget.value = ids.includes(targetBefore) ? targetBefore : (ids.find(id => id !== els.factionMergeSource.value) || ids[0] || "");
+    keepFactionMergeTargetsDistinct();
+    els.mergeFactionBtn.disabled = !isAdmin() || state.data.factions.length < 2;
+  }
+
+  function keepFactionMergeTargetsDistinct(event) {
+    if (!els.factionMergeSource || !els.factionMergeTarget) return;
+    if (els.factionMergeSource.value !== els.factionMergeTarget.value) return;
+    const alternative = state.data.factions.find(faction => faction.id !== (event?.target === els.factionMergeTarget ? els.factionMergeTarget.value : els.factionMergeSource.value));
+    if (!alternative) return;
+    if (event?.target === els.factionMergeTarget) els.factionMergeSource.value = alternative.id;
+    else els.factionMergeTarget.value = alternative.id;
+  }
+
+  function moveFaction(factionId, direction) {
+    if (!isAdmin()) return flashMessage("Faction ordering requires Admin or Root Mode.");
+    const currentIndex = state.data.factions.findIndex(faction => faction.id === factionId);
+    const nextIndex = currentIndex + Math.sign(direction);
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= state.data.factions.length) return;
+    const [faction] = state.data.factions.splice(currentIndex, 1);
+    state.data.factions.splice(nextIndex, 0, faction);
+    saveData();
+    populateStaticControls();
+    renderAllPanels();
+  }
+
+  function mergeSelectedFaction() {
+    if (!isAdmin()) return flashMessage("Faction merging requires Admin or Root Mode.");
+    const sourceId = els.factionMergeSource?.value;
+    const targetId = els.factionMergeTarget?.value;
+    const source = state.data.factions.find(faction => faction.id === sourceId);
+    const target = state.data.factions.find(faction => faction.id === targetId);
+    if (!source || !target) return flashMessage("Choose both an absorbed faction and a receiving faction.");
+    if (source.id === target.id) return flashMessage("A faction cannot be merged into itself.");
+    if (state.data.factions.length < 2) return flashMessage("At least one faction must remain in the registry.");
+
+    const poiCount = state.data.pois.filter(poi => poi.factionId === source.id).length;
+    const overrideCount = state.data.bodies.filter(body => Number(body.controlOverride?.percentages?.[source.id] || 0) > 0).length;
+    const confirmation = `Merge ${source.name} into ${target.name}?\n\nThis transfers ${poiCount} POI holding${poiCount === 1 ? "" : "s"} and ${overrideCount} celestial control override${overrideCount === 1 ? "" : "s"}, then permanently removes ${source.name} from the faction registry.`;
+    if (!confirm(confirmation)) return;
+
+    for (const poi of state.data.pois) {
+      if (poi.factionId === source.id) poi.factionId = target.id;
+    }
+    for (const body of state.data.bodies) {
+      const percentages = body.controlOverride?.percentages;
+      if (!percentages || percentages[source.id] == null) continue;
+      percentages[target.id] = Number(percentages[target.id] || 0) + Number(percentages[source.id] || 0);
+      delete percentages[source.id];
+    }
+
+    state.data.factions = state.data.factions.filter(faction => faction.id !== source.id);
+    state.data.meta ??= {};
+    state.data.meta.deletedFactionIds = [...new Set([...(state.data.meta.deletedFactionIds || []), source.id])];
+    if (els.factionId.value === source.id) {
+      els.factionForm.reset();
+      els.factionId.value = "";
+      els.factionColor.value = "#58a6ff";
+    }
+    saveData();
+    populateStaticControls();
+    renderAllPanels();
+    flashMessage(`${source.name} was merged into ${target.name}. All mapped holdings now belong to ${target.name}.`);
   }
 
   function renderAdminAccessState() {
@@ -3450,6 +3584,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const rootAllowed = isRoot();
     const adminInputs = [
       ...els.factionForm.querySelectorAll("input, button"),
+      ...(els.factionMergeSource ? [els.factionMergeSource] : []),
+      ...(els.factionMergeTarget ? [els.factionMergeTarget] : []),
+      ...(els.mergeFactionBtn ? [els.mergeFactionBtn] : []),
       ...els.moonForm.querySelectorAll("input, select, button"),
       ...(els.bodyForm ? els.bodyForm.querySelectorAll("input, select, button") : [])
     ];
@@ -3457,6 +3594,15 @@ function roundRectPath(ctx, x, y, w, h, r) {
       input.disabled = !adminAllowed;
       input.title = adminAllowed ? "" : "Requires Admin or Root Mode.";
     });
+    if (els.mergeFactionBtn) els.mergeFactionBtn.disabled = !adminAllowed || state.data.factions.length < 2;
+    const selectedEditorBody = bodyById(els.bodyEditSelect?.value);
+    if (els.bodyEditName) {
+      const lockedName = bodyNameIsProtected(selectedEditorBody);
+      els.bodyEditName.readOnly = lockedName;
+      els.bodyEditName.title = lockedName
+        ? "Primary planet, Waystation, star, and Rantel Cluster names are permanently locked."
+        : (adminAllowed ? "" : "Requires Admin or Root Mode.");
+    }
     updateBodyDeleteState();
 
     const poiInputs = [...els.poiForm.querySelectorAll("input, select, textarea, button")];
@@ -3712,6 +3858,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!name) return flashMessage("Faction name is required.");
     const id = els.factionId.value || slugify(code || name);
     const existing = state.data.factions.find(f => f.id === id);
+    state.data.meta ??= {};
+    state.data.meta.deletedFactionIds = (state.data.meta.deletedFactionIds || []).filter(deletedId => deletedId !== id);
     const payload = { id, code, name, color: els.factionColor.value, description: existing?.description || "" };
     if (existing) Object.assign(existing, payload);
     else state.data.factions.push(payload);
@@ -4089,7 +4237,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const body = bodyById(bodyId) || bodyById(state.selectedBodyId) || bodiesForBodyEditor()[0];
     if (!body) return;
     els.bodyEditSelect.value = body.id;
-    els.bodyEditName.value = body.name || "";
+    els.bodyEditName.value = canonicalProtectedBodyName(body);
+    els.bodyEditName.readOnly = bodyNameIsProtected(body);
+    els.bodyEditName.title = bodyNameIsProtected(body)
+      ? "Primary planet, Waystation, star, and Rantel Cluster names are permanently locked."
+      : "";
     els.bodyEditRadius.max = body.type === "star" ? "240" : "120";
     els.bodyEditRadius.value = Number(body.radius || 10);
     const isSystemStar = body.type === "star";
@@ -4135,8 +4287,13 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!isAdmin()) return flashMessage("Celestial body editing requires Admin or Root Mode.");
     const body = bodyById(els.bodyEditSelect.value);
     if (!body) return flashMessage("Select a celestial body to edit.");
-    body.name = els.bodyEditName.value.trim() || body.name;
-    body.shortName = body.shortName || body.name;
+    if (bodyNameIsProtected(body)) {
+      body.name = canonicalProtectedBodyName(body);
+      body.shortName = seed.bodies?.find(item => item.id === body.id)?.shortName || body.name;
+    } else {
+      body.name = els.bodyEditName.value.trim() || body.name;
+      body.shortName = body.shortName || body.name;
+    }
     const maximumRadius = body.type === "star" ? 240 : 120;
     body.radius = clamp(Number(els.bodyEditRadius.value || body.radius || 10), 1, maximumRadius);
     if (body.type !== "star") {

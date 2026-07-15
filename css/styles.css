@@ -1510,3 +1510,45 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
 .info-panel > #selectedInfo::-webkit-scrollbar-thumb:hover {
   background: rgba(109, 247, 255, .72);
 }
+
+
+/* v0.4.8 — faction ordering/merging and protected primary-body names. */
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.faction-record-item .mini-button {
+  min-width: 34px;
+  padding-inline: 9px;
+}
+
+.faction-merge-panel {
+  margin-top: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 107, 74, .24);
+  border-radius: 16px;
+  background: rgba(45, 10, 12, .18);
+}
+
+.faction-merge-panel h3,
+.faction-merge-panel p {
+  margin: 0;
+}
+
+.faction-merge-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+#bodyEditName[readonly] {
+  opacity: .72;
+  cursor: not-allowed;
+  border-color: rgba(145, 203, 255, .12);
+  background: rgba(6, 14, 24, .58);
+}

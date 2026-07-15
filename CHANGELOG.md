@@ -1,5 +1,12 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.4.8-prototype
+- Locked names for primary planets, Rantel Waystations, Osiris, and the Rantel Cluster.
+- Added automatic restoration of canonical seeded primary-body names after accidental edits.
+- Added faction merging with transfer of POI ownership and body-control override percentages.
+- Added persistent faction deletion tombstones for merged seeded factions.
+- Added faction ordering controls with persistent up/down sorting.
+
 ## v0.4.7-prototype
 - Added Osiris itself to the Celestial Bodies Editor.
 - Osiris Visual Size can now be adjusted from 1 to 240 while remaining fixed at the center of System View.

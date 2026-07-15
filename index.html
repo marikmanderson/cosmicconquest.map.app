@@ -187,6 +187,13 @@
                 <button class="primary-button" type="submit">Save Faction</button>
               </form>
               <div id="factionList" class="record-list"></div>
+              <section class="faction-merge-panel">
+                <h3>Merge Factions</h3>
+                <p class="form-note">Transfers every mapped POI and celestial-body control percentage from the absorbed faction to the receiving faction, then removes the absorbed faction.</p>
+                <label>Absorbed Faction<select id="factionMergeSource"></select></label>
+                <label>Receiving Faction<select id="factionMergeTarget"></select></label>
+                <button id="mergeFactionBtn" class="danger-button" type="button">Merge into Receiving Faction</button>
+              </section>
             </section>
 
             <section class="admin-card wide-card">
@@ -253,7 +260,7 @@
               </div>
               <form id="bodyForm" class="poi-form">
                 <label class="full-field">Body<select id="bodyEditSelect"></select></label>
-                <label>Name<input id="bodyEditName" placeholder="Example: Brekka" /></label>
+                <label>Name<input id="bodyEditName" placeholder="Example: Brekka" title="Primary body names are locked." /></label>
                 <label>Visual Size<input id="bodyEditRadius" type="number" step="0.5" min="1" value="30" /></label>
                 <label>Orbit Distance / Spacing<input id="bodyEditOrbitRadius" type="number" step="1" min="1" value="300" /></label>
                 <label>Orbit Speed<input id="bodyEditOrbitSpeed" type="number" step="0.000001" min="0" value="0.000020" /></label>
@@ -309,7 +316,7 @@
                 <label>Population<input id="bodyEditPopulation" placeholder="Example: 8.4 billion" /></label>
                 <label>Major Imports<input id="bodyEditMajorImports" placeholder="Example: bacta, reactor parts" /></label>
                 <label>Major Exports<input id="bodyEditMajorExports" placeholder="Example: tibanna, ores" /></label>
-                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Faction-control overrides are available for every celestial body and must total exactly 100% when enabled. Moon textures can be replaced from this editor. The asteroid-density slider appears only when the Rantel Cluster is selected.</p>
+                <p class="full-field form-note">For planets and Waystations, orbit distance/speed controls spacing and movement around Osiris. For moons and other linked satellites, it controls spacing and movement around the parent body. Names are locked for all planets, Rantel Waystations, Osiris, and the Rantel Cluster. Faction-control overrides are available for every celestial body and must total exactly 100% when enabled. Moon textures can be replaced from this editor. The asteroid-density slider appears only when the Rantel Cluster is selected.</p>
                 <div class="form-actions full-field">
                   <button class="primary-button" type="submit">Save Body Settings</button>
                   <button class="danger-button" type="button" id="deleteBodyBtn">Delete Celestial Body</button>

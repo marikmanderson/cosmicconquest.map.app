@@ -1,12 +1,15 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Cosmic Conquest Atlas v0.4.7 Smoke Test</title>
-<h1>Cosmic Conquest Atlas v0.4.7 Smoke Test</h1>
+<title>Cosmic Conquest Atlas v0.4.8 Smoke Test</title>
+<h1>Cosmic Conquest Atlas v0.4.8 Smoke Test</h1>
 <script>
-fetch('js/app.js').then(r=>r.text()).then(t=>{
-  document.body.insertAdjacentHTML('beforeend', '<p>Star editor: ' + (/\["star", "planet", "moon", "station", "asteroid_belt"\]/.test(t) ? 'PASS' : 'FAIL') + '</p>');
-});
-fetch('css/styles.css').then(r=>r.text()).then(t=>{
-  document.body.insertAdjacentHTML('beforeend', '<p>Selected Asset scrollbar: ' + (t.includes('.info-panel > #selectedInfo') ? 'PASS' : 'FAIL') + '</p>');
+Promise.all([fetch('js/app.js').then(r=>r.text()), fetch('index.html').then(r=>r.text())]).then(([app,html])=>{
+  const tests = [
+    ['Primary-body name lock', app.includes('bodyNameIsProtected') && app.includes('canonicalProtectedBodyName')],
+    ['Faction merge', app.includes('mergeSelectedFaction') && html.includes('factionMergeSource')],
+    ['Faction ordering', app.includes('moveFaction') && app.includes('data-move-faction')],
+    ['Persistent merged-faction removal', app.includes('deletedFactionIds')]
+  ];
+  for (const [name,pass] of tests) document.body.insertAdjacentHTML('beforeend', `<p>${name}: ${pass ? 'PASS' : 'FAIL'}</p>`);
 });
 </script>
