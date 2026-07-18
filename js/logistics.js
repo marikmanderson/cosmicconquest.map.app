@@ -697,6 +697,7 @@
     if(error){console.warn(error);return;}
     state.profile=data;
     if(data?.app_role)api.applyAuthenticatedRole(data.app_role);
+    api.updateRevertButtonState?.();
   }
 
   async function loadProfiles(){if(!state.backendEnabled||!isRoot())return;const{data,error}=await state.client.from("profiles").select("*").order("display_name");if(!error)state.profiles=data||[];}
@@ -717,7 +718,7 @@
     state.data.catalog=(catalogRes.data||[]).map(i=>({id:i.id,category:i.category,name:i.name,cost:i.cost,active:i.active}));
     state.data.assets=(assetsRes.data||[]).map(a=>({id:a.id,companyId:a.company_id,catalogItemId:a.catalog_item_id,category:a.category,name:a.name,status:a.status,createdAt:a.created_at}));
     if(isRoot())await loadProfiles();
-    setupRealtime(); state.loading=false; render();
+    setupRealtime(); state.loading=false; render(); window.CC_ATLAS_API?.updateRevertButtonState?.();
   }
 
   function setupRealtime(){
@@ -756,7 +757,8 @@
     saveAtlasDataNow,
     uploadAtlasTexture,
     deleteAtlasTextures,
-    loadSharedAtlasData
+    loadSharedAtlasData,
+    getCurrentUserKey: () => state.session?.user?.id || state.profile?.discord_user_id || null
   };
   render();
   initBackend();

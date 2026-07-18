@@ -1552,3 +1552,46 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none !important; }
   border-color: rgba(145, 203, 255, .12);
   background: rgba(6, 14, 24, .58);
 }
+
+
+/* v0.4.9 performance pass */
+.map-stage,
+.view-panel,
+#systemView,
+#planetView,
+#logisticsView,
+#adminView {
+  contain: layout paint style;
+}
+
+#systemCanvas,
+#planetCanvas {
+  contain: strict;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.view-panel:not(.active-view) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.poi-list,
+.record-list,
+.configuration-list,
+.logistics-list,
+.body-intel-list {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 520px;
+}
+
+.account-actions #revertLastSaveBtn {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.revert-save-status {
+  text-transform: none;
+  line-height: 1.35;
+  letter-spacing: 0;
+}

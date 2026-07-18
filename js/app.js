@@ -44,9 +44,20 @@
     textures: {},
     textureCanvases: {},
     systemTextureCanvases: {},
+    systemBackgroundCache: null,
+    asteroidPointCache: new Map(),
+    controlCache: new Map(),
+    sectorBonusCache: new Map(),
+    systemControlCache: new Map(),
+    dataRevision: 0,
+    lastSavedJson: null,
     lastFrame: performance.now(),
-    animationTime: performance.now()
+    lastSystemRender: 0,
+    lastPlanetRender: 0,
+    animationTime: performance.now(),
+    systemDirty: true
   };
+  state.lastSavedJson = JSON.stringify(state.data);
 
   const els = {
     tabButtons: [...document.querySelectorAll(".tab-button")],
@@ -65,6 +76,8 @@
     adminModeBtn: document.getElementById("adminModeBtn"),
     rootModeBtn: document.getElementById("rootModeBtn"),
     modeReadout: document.getElementById("modeReadout"),
+    revertLastSaveBtn: document.getElementById("revertLastSaveBtn"),
+    revertSaveStatus: document.getElementById("revertSaveStatus"),
     systemView: document.getElementById("systemView"),
     planetView: document.getElementById("planetView"),
     logisticsView: document.getElementById("logisticsView"),
@@ -375,7 +388,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.8-prototype";
+    clone.meta.version = "0.4.9-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -479,8 +492,176 @@
     return result;
   }
 
-  function saveData() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  const UNDO_COLLECTIONS = ["bodies", "factions", "pois", "terrain", "sectors", "modelTemplates", "poiTypes", "moonTemplates", "visibilityStates"];
+
+  function invalidateDataCaches() {
+    state.dataRevision += 1;
+    state.controlCache.clear();
+    state.sectorBonusCache.clear();
+    state.systemControlCache.clear();
+    state.systemDirty = true;
+  }
+
+  function currentUndoUserKey() {
+    const sharedKey = window.CC_LOGISTICS?.getCurrentUserKey?.();
+    return String(sharedKey || `local-${state.role || "viewer"}`).replace(/[^a-zA-Z0-9_-]/g, "_");
+  }
+
+  function undoStorageKey() {
+    return `cc_atlas_last_save_v049_${currentUndoUserKey()}`;
+  }
+
+  function jsonEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function collectionMap(items) {
+    return new Map((Array.isArray(items) ? items : []).filter(item => item?.id).map(item => [item.id, item]));
+  }
+
+  function buildUndoPatch(before, after) {
+    if (!before || !after || jsonEqual(before, after)) return null;
+    const changes = [];
+    for (const key of UNDO_COLLECTIONS) {
+      const beforeItems = Array.isArray(before[key]) ? before[key] : [];
+      const afterItems = Array.isArray(after[key]) ? after[key] : [];
+      const beforeMap = collectionMap(beforeItems);
+      const afterMap = collectionMap(afterItems);
+      for (const [id, oldValue] of beforeMap) {
+        if (!afterMap.has(id)) changes.push({ kind: "remove", collection: key, id, before: oldValue });
+        else if (!jsonEqual(oldValue, afterMap.get(id))) changes.push({ kind: "update", collection: key, id, before: oldValue, after: afterMap.get(id) });
+      }
+      for (const [id, newValue] of afterMap) {
+        if (!beforeMap.has(id)) changes.push({ kind: "add", collection: key, id, after: newValue });
+      }
+      const beforeOrder = beforeItems.map(item => item?.id).filter(Boolean);
+      const afterOrder = afterItems.map(item => item?.id).filter(Boolean);
+      if (!jsonEqual(beforeOrder, afterOrder)) changes.push({ kind: "order", collection: key, before: beforeOrder, after: afterOrder });
+    }
+    const collectionSet = new Set(UNDO_COLLECTIONS);
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (collectionSet.has(key)) continue;
+      if (!jsonEqual(before[key], after[key])) changes.push({ kind: "root", key, before: before[key], after: after[key] });
+    }
+    if (!changes.length) return null;
+    const named = changes.find(change => ["bodies","pois","terrain","factions"].includes(change.collection));
+    const item = named?.after || named?.before;
+    const label = item?.name ? `${item.name}` : `${changes.length} atlas change${changes.length === 1 ? "" : "s"}`;
+    return { version: 1, createdAt: new Date().toISOString(), userKey: currentUndoUserKey(), label, changes };
+  }
+
+  function saveUndoPatch(patch) {
+    if (!patch) return;
+    try { localStorage.setItem(undoStorageKey(), JSON.stringify(patch)); }
+    catch (err) { console.warn("Could not store last-save revert data.", err); }
+  }
+
+  function loadUndoPatch() {
+    try { return JSON.parse(localStorage.getItem(undoStorageKey()) || "null"); }
+    catch { return null; }
+  }
+
+  function clearUndoPatch() {
+    localStorage.removeItem(undoStorageKey());
+  }
+
+  function reverseThreeWay(current, before, after) {
+    if (jsonEqual(current, after)) return { value: deepClone(before), applied: true, conflicts: 0 };
+    const beforeObject = before && typeof before === "object" && !Array.isArray(before);
+    const afterObject = after && typeof after === "object" && !Array.isArray(after);
+    const currentObject = current && typeof current === "object" && !Array.isArray(current);
+    if (!beforeObject || !afterObject || !currentObject) return { value: current, applied: false, conflicts: 1 };
+    const result = deepClone(current);
+    let applied = false;
+    let conflicts = 0;
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (jsonEqual(before[key], after[key])) continue;
+      if (jsonEqual(current[key], after[key])) {
+        if (before[key] === undefined) delete result[key];
+        else result[key] = deepClone(before[key]);
+        applied = true;
+      } else {
+        const nested = reverseThreeWay(current[key], before[key], after[key]);
+        if (nested.applied) { result[key] = nested.value; applied = true; }
+        conflicts += nested.conflicts;
+      }
+    }
+    return { value: result, applied, conflicts };
+  }
+
+  function updateRevertButtonState() {
+    if (!els.revertLastSaveBtn) return;
+    const patch = loadUndoPatch();
+    const allowed = ["command","admin","root"].includes(state.role);
+    els.revertLastSaveBtn.disabled = !allowed || !patch?.changes?.length;
+    if (els.revertSaveStatus) {
+      els.revertSaveStatus.textContent = patch?.changes?.length
+        ? `Last save: ${patch.label || "atlas change"} · ${new Date(patch.createdAt).toLocaleString()}`
+        : "No saved change is available to revert for this account on this browser.";
+    }
+  }
+
+  function revertLastUserSave() {
+    const patch = loadUndoPatch();
+    if (!patch?.changes?.length) return flashMessage("No saved change is available to revert for this account.");
+    if (!["command","admin","root"].includes(state.role)) return flashMessage("Reverting a save requires Command, Admin, or Root access.");
+    if (!confirm(`Revert your last save (${patch.label || "atlas change"})? Only fields that still match your saved version will be restored.`)) return;
+
+    const next = deepClone(state.data);
+    let applied = 0;
+    let conflicts = 0;
+    for (const change of [...patch.changes].reverse()) {
+      if (change.kind === "root") {
+        const result = reverseThreeWay(next[change.key], change.before, change.after);
+        if (result.applied) { next[change.key] = result.value; applied += 1; }
+        conflicts += result.conflicts;
+        continue;
+      }
+      const items = Array.isArray(next[change.collection]) ? next[change.collection] : (next[change.collection] = []);
+      const index = items.findIndex(item => item?.id === change.id);
+      if (change.kind === "add") {
+        if (index >= 0 && jsonEqual(items[index], change.after)) { items.splice(index, 1); applied += 1; }
+        else conflicts += 1;
+      } else if (change.kind === "remove") {
+        if (index < 0) { items.push(deepClone(change.before)); applied += 1; }
+        else conflicts += 1;
+      } else if (change.kind === "update") {
+        if (index < 0) { conflicts += 1; continue; }
+        const result = reverseThreeWay(items[index], change.before, change.after);
+        if (result.applied) { items[index] = result.value; applied += 1; }
+        conflicts += result.conflicts;
+      } else if (change.kind === "order") {
+        const currentOrder = items.map(item => item?.id).filter(Boolean);
+        if (jsonEqual(currentOrder, change.after)) {
+          const byId = collectionMap(items);
+          next[change.collection] = change.before.map(id => byId.get(id)).filter(Boolean);
+          applied += 1;
+        }
+      }
+    }
+    if (!applied) return flashMessage("Nothing was reverted because the affected fields were changed again after your save.");
+    state.data = migrateData(next);
+    state.lastSavedJson = JSON.stringify(state.data);
+    localStorage.setItem(STORAGE_KEY, state.lastSavedJson);
+    invalidateDataCaches();
+    clearUndoPatch();
+    window.CC_LOGISTICS?.scheduleSiteSync?.();
+    window.CC_LOGISTICS?.scheduleAtlasSave?.();
+    state.planetDirty = true;
+    renderAllPanels();
+    flashMessage(conflicts ? `Reverted your last save. ${conflicts} field${conflicts === 1 ? " was" : "s were"} preserved because someone changed them afterward.` : "Your last save was reverted.");
+  }
+
+  function saveData(options = {}) {
+    const afterJson = JSON.stringify(state.data);
+    if (!options.skipUndo && state.lastSavedJson && state.lastSavedJson !== afterJson) {
+      try { saveUndoPatch(buildUndoPatch(JSON.parse(state.lastSavedJson), state.data)); }
+      catch (err) { console.warn("Could not build last-save revert data.", err); }
+    }
+    state.lastSavedJson = afterJson;
+    localStorage.setItem(STORAGE_KEY, afterJson);
+    invalidateDataCaches();
+    updateRevertButtonState();
     window.CC_LOGISTICS?.scheduleSiteSync?.();
     window.CC_LOGISTICS?.scheduleAtlasSave?.();
   }
@@ -626,6 +807,7 @@
 
     els.settingsBtn?.addEventListener("click", () => toggleSettingsMenu(true));
     els.settingsCloseBtn?.addEventListener("click", () => toggleSettingsMenu(false));
+    els.revertLastSaveBtn?.addEventListener("click", revertLastUserSave);
     els.viewerModeBtn?.addEventListener("click", () => setRoleMode("viewer"));
     els.disableSatellites?.addEventListener("change", () => updateUserSetting("disableSatellites", els.disableSatellites.checked));
     els.disableSatelliteNames?.addEventListener("change", () => updateUserSetting("disableSatelliteNames", els.disableSatelliteNames.checked));
@@ -844,6 +1026,7 @@
     [els.viewerModeBtn, els.commandModeBtn, els.adminModeBtn, els.rootModeBtn].forEach(btn => btn?.classList.remove("active"));
     ({ viewer: els.viewerModeBtn, command: els.commandModeBtn, admin: els.adminModeBtn, root: els.rootModeBtn }[state.role] || els.viewerModeBtn)?.classList.add("active");
     if (els.modeReadout) els.modeReadout.textContent = `Current mode: ${modeLabel()}`;
+    updateRevertButtonState();
     els.showHiddenSettingsWrap?.classList.toggle("hidden", !isAdmin());
     if (els.showHiddenSettings) { els.showHiddenSettings.disabled = !isAdmin(); els.showHiddenSettings.checked = isAdmin() && state.showHidden; }
     if (els.commandPasswordInput) els.commandPasswordInput.value = state.passwords.command || "";
@@ -876,6 +1059,7 @@
       }
     }
     state.activeView = view;
+    if (view === "system") state.systemDirty = true;
     els.tabButtons.forEach(button => button.classList.toggle("active", button.dataset.view === view));
     els.systemView.classList.toggle("active-view", view === "system");
     els.planetView.classList.toggle("active-view", view === "planet");
@@ -961,8 +1145,13 @@ function updatePlanetViewUi() {
   }
 
   function populateSelect(select, items, valueKey, labelKey) {
+    if (!select) return;
     const current = select.value;
-    select.innerHTML = items.map(item => `<option value="${escapeHtml(item[valueKey])}">${escapeHtml(item[labelKey])}</option>`).join("");
+    const signature = items.map(item => `${item[valueKey]}:${item[labelKey]}`).join("|");
+    if (select.dataset.optionSignature !== signature) {
+      select.innerHTML = items.map(item => `<option value="${escapeHtml(item[valueKey])}">${escapeHtml(item[labelKey])}</option>`).join("");
+      select.dataset.optionSignature = signature;
+    }
     if (items.some(item => item[valueKey] === current)) select.value = current;
   }
 
@@ -971,7 +1160,11 @@ function updatePlanetViewUi() {
     if (!select) return;
     const options = templatesForType(typeId);
     const desired = preferredId || select.value || defaultIconForType(typeId);
-    select.innerHTML = options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join("");
+    const signature = options.map(item => `${item.id}:${item.label}`).join("|");
+    if (select.dataset.optionSignature !== signature) {
+      select.innerHTML = options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join("");
+      select.dataset.optionSignature = signature;
+    }
     select.value = options.some(item => item.id === desired) ? desired : (options[0]?.id || "");
   }
 
@@ -1037,11 +1230,14 @@ function updatePlanetViewUi() {
     renderSystemControlPanel();
     renderSelectedPanel();
     renderPoiList();
-    renderAdminLists();
-    renderAdminAccessState();
+    if (state.activeView === "admin" && isAdmin()) {
+      renderAdminLists();
+      renderAdminAccessState();
+    }
     updatePlanetViewUi();
     renderBodyIntelPanel();
-    window.CC_LOGISTICS?.render?.();
+    if (state.activeView === "logistics" || state.activeView === "admin") window.CC_LOGISTICS?.render?.();
+    state.systemDirty = true;
     state.planetDirty = true;
     if (state.activeView === "planet") renderPlanet();
   }
@@ -1053,7 +1249,7 @@ function updatePlanetViewUi() {
 
   function resizeCanvas(canvas, ctx) {
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const width = Math.max(1, rect.width);
     const height = Math.max(1, rect.height);
     if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
@@ -1065,15 +1261,13 @@ function updatePlanetViewUi() {
   }
 
   function loop(now) {
-    const dt = now - state.lastFrame;
+    const rawDt = Math.min(100, now - state.lastFrame);
     state.lastFrame = now;
-    if (!state.paused) state.animationTime += dt;
-    try {
-      renderSystem(now);
-    } catch (err) {
-      console.error("System map render failed", err);
-      drawCanvasNotice(els.systemCanvas, systemCtx, "System map render failed", err.message || String(err));
+    if (document.hidden) {
+      requestAnimationFrame(loop);
+      return;
     }
+
     const selectedPlanetBody = bodyById(state.selectedBodyId);
     const animatePlanetSatellites = state.activeView === "planet"
       && state.planetViewMode === "globe"
@@ -1081,12 +1275,35 @@ function updatePlanetViewUi() {
       && !state.paused
       && state.planetCamera.zoom <= 0.72
       && Boolean(selectedPlanetBody && state.data.bodies.some(body => body.parentBodyId === selectedPlanetBody.id));
+
+    if (!state.paused && (state.activeView === "system" || animatePlanetSatellites)) state.animationTime += rawDt;
+
+    if (state.activeView === "system") {
+      const dragging = state.dragCamera?.view === "system";
+      const interval = dragging ? 1000 / 45 : 1000 / 30;
+      if (state.systemDirty || (!state.paused && now - state.lastSystemRender >= interval)) {
+        try {
+          renderSystem(now);
+          state.lastSystemRender = now;
+          state.systemDirty = false;
+        } catch (err) {
+          console.error("System map render failed", err);
+          drawCanvasNotice(els.systemCanvas, systemCtx, "System map render failed", err.message || String(err));
+        }
+      }
+    }
+
     if (state.activeView === "planet" && (state.planetDirty || animatePlanetSatellites)) {
-      try {
-        renderPlanet();
-      } catch (err) {
-        console.error("Planet map render failed", err);
-        drawCanvasNotice(els.planetCanvas, planetCtx, "Planet theater render failed", err.message || String(err));
+      const planetDragging = state.dragCamera?.view === "planet";
+      const planetInterval = planetDragging ? 1000 / 30 : (animatePlanetSatellites ? 1000 / 30 : 0);
+      if (!planetInterval || now - state.lastPlanetRender >= planetInterval) {
+        try {
+          renderPlanet();
+          state.lastPlanetRender = now;
+        } catch (err) {
+          console.error("Planet map render failed", err);
+          drawCanvasNotice(els.planetCanvas, planetCtx, "Planet theater render failed", err.message || String(err));
+        }
       }
     }
     requestAnimationFrame(loop);
@@ -1164,23 +1381,32 @@ function updatePlanetViewUi() {
   }
 
   function drawStarfield(ctx, width, height) {
-    const grd = ctx.createRadialGradient(width * .52, height * .44, 60, width * .52, height * .52, Math.max(width, height));
-    grd.addColorStop(0, "rgba(10, 28, 52, 0.7)");
-    grd.addColorStop(.42, "rgba(3, 7, 15, 0.82)");
-    grd.addColorStop(1, "rgba(0, 1, 5, 1)");
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, width, height);
-
-    const count = Math.floor((width * height) / 5400);
-    for (let i = 0; i < count; i++) {
-      const p = pseudoPoint(i);
-      const x = p.x * width;
-      const y = p.y * height;
-      const alpha = 0.28 + (p.z * 0.72);
-      const size = p.z > .95 ? 1.9 : 1.05;
-      ctx.fillStyle = `rgba(235, 248, 255, ${alpha})`;
-      ctx.fillRect(x, y, size, size);
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    let cache = state.systemBackgroundCache;
+    if (!cache || cache.width !== w || cache.height !== h) {
+      cache = document.createElement("canvas");
+      cache.width = w;
+      cache.height = h;
+      const cctx = cache.getContext("2d", { alpha: false });
+      const grd = cctx.createRadialGradient(w * .52, h * .44, 60, w * .52, h * .52, Math.max(w, h));
+      grd.addColorStop(0, "rgba(10, 28, 52, 0.7)");
+      grd.addColorStop(.42, "rgba(3, 7, 15, 0.82)");
+      grd.addColorStop(1, "rgba(0, 1, 5, 1)");
+      cctx.fillStyle = grd;
+      cctx.fillRect(0, 0, w, h);
+      const count = Math.floor((w * h) / 5400);
+      cctx.fillStyle = "rgba(235,248,255,.72)";
+      for (let i = 0; i < count; i++) {
+        const p = pseudoPoint(i);
+        cctx.globalAlpha = .28 + p.z * .72;
+        const size = p.z > .95 ? 1.9 : 1.05;
+        cctx.fillRect(p.x * w, p.y * h, size, size);
+      }
+      cctx.globalAlpha = 1;
+      state.systemBackgroundCache = cache;
     }
+    ctx.drawImage(cache, 0, 0, width, height);
   }
 
   function drawOrbitRings(ctx, center, scale) {
@@ -1215,20 +1441,24 @@ function updatePlanetViewUi() {
     ctx.stroke();
 
     const asteroidCount = clamp(Math.round(Number(belt.asteroidVisualCount ?? 340)), 100, 1200);
-    for (let i = 0; i < asteroidCount; i++) {
-      const p = pseudoPoint(i + 2200);
-      const angle = p.x * Math.PI * 2 + time + (i % 7) * .006;
-      const jitter = (p.y - .5) * 58 * scale;
+    let points = state.asteroidPointCache.get(asteroidCount);
+    if (!points) {
+      points = Array.from({ length: asteroidCount }, (_, i) => {
+        const p = pseudoPoint(i + 2200);
+        return { angle: p.x * Math.PI * 2 + (i % 7) * .006, jitter: (p.y - .5) * 58, size: 1 + p.z * 2.6, alpha: .18 + p.z * .36 };
+      });
+      state.asteroidPointCache.set(asteroidCount, points);
+    }
+    ctx.lineWidth = 1;
+    for (const p of points) {
+      const angle = p.angle + time;
+      const jitter = p.jitter * scale;
       const rx = radius + jitter;
-      const ry = (radius + jitter) * 0.64;
+      const ry = (radius + jitter) * .64;
       const x = center.x + Math.cos(angle) * rx;
       const y = center.y + Math.sin(angle) * ry;
-      const size = 1 + p.z * 3.1;
-      ctx.strokeStyle = `rgba(230, 238, 245, ${0.18 + p.z * 0.36})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(x, y, size * 1.7, size, angle, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.fillStyle = `rgba(230,238,245,${p.alpha})`;
+      ctx.fillRect(x - p.size, y - p.size * .45, p.size * 2, Math.max(1, p.size * .9));
     }
 
     if (state.settings.disableNames) {
@@ -1663,7 +1893,8 @@ function updatePlanetViewUi() {
       zoomCameraAt(cameraForView(view), getCanvasPoint(event, canvas), rect.width, rect.height, event.deltaY, view);
       constrainCamera(view);
       els.hoverCard.classList.add("hidden");
-      if (view === "planet") { state.planetDirty = true; renderPlanet(); }
+      if (view === "planet") state.planetDirty = true;
+      if (view === "system") state.systemDirty = true;
     }, { passive: false });
 
     canvas.addEventListener("pointerdown", (event) => {
@@ -1702,13 +1933,14 @@ function updatePlanetViewUi() {
       if (drag.mode === "rotate" && view === "planet") {
         state.planetRotation.lon += dx * 0.0085;
         state.planetRotation.lat = clamp(state.planetRotation.lat + dy * 0.0065, -1.25, 1.25);
-        renderPlanet();
+        state.planetDirty = true;
       } else {
         const camera = cameraForView(view);
         camera.x += dx / camera.zoom;
         camera.y += dy / camera.zoom;
         constrainCamera(view);
-        if (view === "planet") { state.planetDirty = true; renderPlanet(); }
+        if (view === "planet") state.planetDirty = true;
+        if (view === "system") state.systemDirty = true;
       }
       drag.lastX = event.clientX;
       drag.lastY = event.clientY;
@@ -1723,11 +1955,8 @@ function updatePlanetViewUi() {
       }
       state.dragCamera = null;
       canvas.releasePointerCapture?.(event.pointerId);
-      if (view === "planet") {
-        state.planetDirty = true;
-        renderPlanet();
-      }
-      if (view === "system") renderSystem();
+      if (view === "planet") state.planetDirty = true;
+      if (view === "system") state.systemDirty = true;
     };
 
     canvas.addEventListener("pointerup", finishDrag);
@@ -1807,6 +2036,7 @@ function updatePlanetViewUi() {
       if (body) state.selectedBodyId = body.id;
     }
     if (!body) return;
+    ensureTextureForBody(body);
 
     els.planetTitle.textContent = body.name;
     els.planetSelect.value = body.id;
@@ -1838,7 +2068,7 @@ function updatePlanetViewUi() {
 
   function clearCanvas(ctx, canvas, width, height) {
     // Be deliberately heavy-handed here: pan/zoom transforms are useful, ghosts are not.
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width || Math.round(width * dpr), canvas.height || Math.round(height * dpr));
@@ -2187,32 +2417,77 @@ function roundRectPath(ctx, x, y, w, h, r) {
     };
   }
 
-  function loadTextures() {
-    const manifest = {
-      "osiris-prime": "assets/textures/osiris-prime_map.png",
-      vau: "assets/textures/vau_map.png",
-      brekka: "assets/textures/brekka_map.png",
-      vulkan: "assets/textures/vulkan_map.png",
-      barren: "assets/textures/barren_map.png",
-      oceanic: "assets/textures/oceanic_map.png",
-      urban: "assets/textures/urban_map.png",
-      lush: "assets/textures/lush_map.png"
-    };
-    Object.entries(manifest).forEach(([key, src]) => {
+  const BUILTIN_TEXTURE_MANIFEST = {
+    "osiris-prime": "assets/textures/osiris-prime_map.png",
+    vau: "assets/textures/vau_map.png",
+    brekka: "assets/textures/brekka_map.png",
+    vulkan: "assets/textures/vulkan_map.png",
+    barren: "assets/textures/barren_map.png",
+    oceanic: "assets/textures/oceanic_map.png",
+    urban: "assets/textures/urban_map.png",
+    lush: "assets/textures/lush_map.png"
+  };
+  const SYSTEM_DISK_MANIFEST = {
+    "osiris-prime": "assets/textures/osiris-prime_disk.png",
+    vau: "assets/textures/vau_disk.png",
+    brekka: "assets/textures/brekka_disk.png",
+    vulkan: "assets/textures/vulkan_disk.png"
+  };
+  const pendingTextureLoads = new Map();
+
+  function loadTextureImage(key, src, { full = true, systemOnly = false } = {}) {
+    if (!key || !src) return Promise.resolve(null);
+    const pendingKey = `${key}:${systemOnly ? "system" : "full"}`;
+    if (full && state.textures[key]) return Promise.resolve(state.textures[key]);
+    if (pendingTextureLoads.has(pendingKey)) return pendingTextureLoads.get(pendingKey);
+    const promise = new Promise(resolve => {
       const img = new Image();
+      img.decoding = "async";
       img.onload = () => {
-        state.textures[key] = img;
-        makeSystemTexture(key, img);
-        makeGlobeRenderTexture(key, img);
-        state.planetDirty = true;
+        if (systemOnly) {
+          const c = document.createElement("canvas");
+          c.width = 96; c.height = 96;
+          const cctx = c.getContext("2d");
+          cctx.imageSmoothingEnabled = true;
+          cctx.imageSmoothingQuality = "medium";
+          cctx.drawImage(img, 0, 0, 96, 96);
+          state.systemTextureCanvases[key] = c;
+          state.systemDirty = true;
+        } else {
+          state.textures[key] = img;
+          makeSystemTexture(key, img);
+          makeGlobeRenderTexture(key, img);
+          state.planetDirty = true;
+          state.systemDirty = true;
+        }
+        pendingTextureLoads.delete(pendingKey);
+        resolve(img);
       };
+      img.onerror = () => { pendingTextureLoads.delete(pendingKey); resolve(null); };
       img.src = src;
     });
-    for (const body of state.data.bodies || []) {
-      const textureSource = customTextureSource(body);
-      if (!textureSource) continue;
-      cacheBodyTexture(body, textureSource);
+    pendingTextureLoads.set(pendingKey, promise);
+    return promise;
+  }
+
+  function ensureTextureForBody(body) {
+    if (!body) return;
+    const key = textureKeyForBody(body);
+    if (!key || state.textures[key]) return;
+    const custom = customTextureSource(body);
+    if (custom) {
+      cacheBodyTexture(body, custom);
+      return;
     }
+    const src = BUILTIN_TEXTURE_MANIFEST[key];
+    if (src) loadTextureImage(key, src);
+  }
+
+  function loadTextures() {
+    // Lightweight system thumbnails load immediately. Large 8K theater maps load only when opened.
+    for (const [key, src] of Object.entries(SYSTEM_DISK_MANIFEST)) loadTextureImage(key, src, { full: false, systemOnly: true });
+    for (const key of ["barren", "oceanic", "urban", "lush"]) loadTextureImage(key, BUILTIN_TEXTURE_MANIFEST[key]);
+    if (state.activeView === "planet") ensureTextureForBody(bodyById(state.selectedBodyId));
   }
 
   function fallbackSurfacePalette(body) {
@@ -3276,11 +3551,13 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function calculateSystemControl(actual = false) {
+    const cacheKey = `${state.dataRevision}:${actual ? 1 : 0}`;
+    if (state.systemControlCache.has(cacheKey)) return state.systemControlCache.get(cacheKey);
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
     let total = 0;
     const overriddenBodies = new Set(state.data.bodies.filter(body => manualBodyControl(body)).map(body => body.id));
-    const pois = state.data.pois.filter(poi => !overriddenBodies.has(poi.bodyId) && (actual || canSeeForPublic(poi)));
-    for (const poi of pois) {
+    for (const poi of state.data.pois) {
+      if (overriddenBodies.has(poi.bodyId) || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
       scores[poi.factionId] = (scores[poi.factionId] || 0) + val;
       total += val;
@@ -3293,42 +3570,44 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const body of state.data.bodies) {
       const manual = manualBodyControl(body);
       if (!manual) continue;
-      for (const faction of state.data.factions) {
-        scores[faction.id] = (scores[faction.id] || 0) + Number(manual.scores[faction.id] || 0);
-      }
+      for (const faction of state.data.factions) scores[faction.id] = (scores[faction.id] || 0) + Number(manual.scores[faction.id] || 0);
       total += manual.total;
     }
-    return { scores, total };
+    const result = { scores, total };
+    state.systemControlCache.set(cacheKey, result);
+    return result;
   }
 
   function calculateBodyControl(bodyId, actual = false) {
+    const cacheKey = `${state.dataRevision}:${actual ? 1 : 0}:${bodyId}`;
+    if (state.controlCache.has(cacheKey)) return state.controlCache.get(cacheKey);
     const body = bodyById(bodyId);
     const manual = manualBodyControl(body);
-    if (manual) return manual;
+    if (manual) { state.controlCache.set(cacheKey, manual); return manual; }
 
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
     let total = 0;
-    const pois = state.data.pois.filter(poi => poi.bodyId === bodyId && (actual || canSeeForPublic(poi)));
-    for (const poi of pois) {
+    for (const poi of state.data.pois) {
+      if (poi.bodyId !== bodyId || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
       scores[poi.factionId] = (scores[poi.factionId] || 0) + val;
       total += val;
     }
-    for (const bonus of calculateSectorBonuses(actual).filter(b => b.bodyId === bodyId)) {
+    for (const bonus of calculateSectorBonuses(actual)) {
+      if (bonus.bodyId !== bodyId) continue;
       scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
       total += bonus.value;
     }
-
-    // Any manually controlled linked body contributes its Strategic Weight to its parent body while the parent remains automatic.
-    for (const child of state.data.bodies.filter(item => item.parentBodyId === bodyId)) {
+    for (const child of state.data.bodies) {
+      if (child.parentBodyId !== bodyId) continue;
       const childManual = manualBodyControl(child);
       if (!childManual) continue;
-      for (const faction of state.data.factions) {
-        scores[faction.id] = (scores[faction.id] || 0) + Number(childManual.scores[faction.id] || 0);
-      }
+      for (const faction of state.data.factions) scores[faction.id] = (scores[faction.id] || 0) + Number(childManual.scores[faction.id] || 0);
       total += childManual.total;
     }
-    return { scores, total };
+    const result = { scores, total };
+    state.controlCache.set(cacheKey, result);
+    return result;
   }
 
   function canSeeForPublic(item) {
@@ -3337,24 +3616,35 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function calculateSectorBonuses(actual = false) {
+    const cacheKey = `${state.dataRevision}:${actual ? 1 : 0}`;
+    if (state.sectorBonusCache.has(cacheKey)) return state.sectorBonusCache.get(cacheKey);
+    const visiblePois = actual ? state.data.pois : state.data.pois.filter(canSeeForPublic);
+    const poisBySector = new Map();
+    for (const poi of visiblePois) {
+      if (!poi.sectorId) continue;
+      if (!poisBySector.has(poi.sectorId)) poisBySector.set(poi.sectorId, []);
+      poisBySector.get(poi.sectorId).push(poi);
+    }
     const bonuses = [];
     for (const sector of state.data.sectors) {
-      const sectorPois = state.data.pois.filter(p => p.sectorId === sector.id && (actual || canSeeForPublic(p)));
+      const sectorPois = poisBySector.get(sector.id) || [];
       if (!sectorPois.length) continue;
       const byFaction = new Map();
+      let totalValue = 0;
       for (const poi of sectorPois) {
         const value = Number(poi.strategicValue || 0);
         byFaction.set(poi.factionId, (byFaction.get(poi.factionId) || 0) + value);
+        totalValue += value;
       }
-      const totalValue = [...byFaction.values()].reduce((sum, value) => sum + value, 0);
       if (!totalValue) continue;
-      for (const [factionId, value] of byFaction.entries()) {
+      for (const [factionId, value] of byFaction) {
         if (value / totalValue >= Number(sector.threshold || 1)) {
           bonuses.push({ sectorId: sector.id, bodyId: sector.bodyId, factionId, value: Number(sector.bonusValue || 0) });
           break;
         }
       }
     }
+    state.sectorBonusCache.set(cacheKey, bonuses);
     return bonuses;
   }
 
@@ -4538,7 +4828,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function applySharedData(sharedData) {
     if (!sharedData || typeof sharedData !== "object") return;
     state.data = migrateData(sharedData);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    state.lastSavedJson = JSON.stringify(state.data);
+    localStorage.setItem(STORAGE_KEY, state.lastSavedJson);
+    invalidateDataCaches();
     if (!state.data.bodies.some(body => body.id === state.selectedBodyId)) {
       state.selectedBodyId = firstTheaterBody()?.id || state.data.bodies[0]?.id || "";
     }
@@ -4565,7 +4857,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     escapeHtml,
     uuid,
     renderAllPanels,
-    applySharedData
+    applySharedData,
+    revertLastUserSave,
+    updateRevertButtonState
   };
 
   init();

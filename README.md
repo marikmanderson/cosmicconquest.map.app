@@ -2,7 +2,7 @@
 
 The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.4.8
+## What is in v0.4.9
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Rantel Cluster-only asteroid-density slider for controlling decorative System View belt population.
@@ -88,9 +88,14 @@ The Celestial Bodies Editor includes a public description field and optional fac
 - The Selected Asset information panel now scrolls independently when its briefing is taller than the right rail.
 
 
-## New in v0.4.8
+## New in v0.4.9
 
 - Locks canonical names for all planets, Rantel Waystations, Osiris, and the Rantel Cluster. Existing accidental renames of seeded primary bodies are restored automatically.
 - Adds faction merging: POI holdings and celestial-control percentages transfer to the receiving faction before the absorbed faction is removed.
 - Adds persistent faction-removal records so merged seeded factions do not return after reload.
 - Adds up/down controls to reorder factions throughout the Atlas interface.
+
+
+## Revert and performance
+
+Settings includes **Revert My Last Save** for Command/Admin/Root users. It reverses only the most recent save made by that account on the current browser and preserves fields that were changed again by another user. The render loop now pauses hidden views, caps animation work, and caches repeated calculations.
