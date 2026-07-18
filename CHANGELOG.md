@@ -1,4 +1,9 @@
-# Cosmic Conquest Atlas — Changelog
+# Cosmic Conquest Atlas Changelog
+
+## v0.5.1
+- Fixed Planet Theater globe view for uploaded moon textures by routing moon globe rendering through the optimized Canvas projection path.
+- Added a browser tab favicon using the GAR logo already shown in the Atlas header.
+
 
 ## v0.5.0-prototype
 - Restored uploaded moon textures in System View while keeping full-resolution Planet Theater maps lazy-loaded.

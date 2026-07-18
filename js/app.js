@@ -3000,7 +3000,13 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }
 
     try {
-      if (!renderGlobeWithWebGL(ctx, globe, body, img)) drawEquirectangularTextureOnSphere(ctx, globe, body, img);
+      // Custom moon textures can arrive from shared uploads and behave inconsistently with the
+      // GPU globe path on some browsers/hosts. The Canvas projection remains smooth after the
+      // v0.5.0 optimizations and guarantees those uploaded moon textures display correctly.
+      const preferCanvasProjection = body?.type === "moon";
+      if (preferCanvasProjection || !renderGlobeWithWebGL(ctx, globe, body, img)) {
+        drawEquirectangularTextureOnSphere(ctx, globe, body, img);
+      }
       drawGlobeSurfaceShade(ctx, globe);
     } catch (err) {
       console.warn("Textured sphere render failed; falling back to procedural globe.", err);
