@@ -139,6 +139,13 @@
   }
 
   function render() {
+    renderBackendStatus();
+    const activeView = api.getActiveView?.() || "system";
+    if (activeView !== "logistics" && activeView !== "admin") {
+      state.renderDirty = true;
+      return;
+    }
+    state.renderDirty = false;
     fillStaticSelects();
     if (!state.data.companies.some(company => company.id === state.selectedCompanyId)) state.selectedCompanyId = state.data.companies[0]?.id || "";
     if (els.logisticsCategorySelect) els.logisticsCategorySelect.value = state.selectedCategory;
@@ -146,7 +153,6 @@
     renderCatalog();
     renderTracker();
     renderSummary();
-    renderBackendStatus();
     renderAdmin();
   }
 

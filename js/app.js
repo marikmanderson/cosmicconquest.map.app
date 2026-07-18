@@ -45,17 +45,31 @@
     textureCanvases: {},
     systemTextureCanvases: {},
     systemBackgroundCache: null,
+    systemBodySpriteCache: new Map(),
+    systemOrbitLayerCache: null,
     asteroidPointCache: new Map(),
     controlCache: new Map(),
     sectorBonusCache: new Map(),
     systemControlCache: new Map(),
+    planetBackgroundCache: null,
+    globeRenderer: null,
+    globeRendererUnavailable: false,
+    resizeFrame: 0,
     dataRevision: 0,
+    staticControlsKey: "",
+    uiRenderKeys: { systemControl: "", selected: "", poiList: "", admin: "", bodyIntel: "" },
+    lastVisualRenderKey: "",
     lastSavedJson: null,
     lastFrame: performance.now(),
     lastSystemRender: 0,
     lastPlanetRender: 0,
+    systemRenderCost: 0,
     animationTime: performance.now(),
-    systemDirty: true
+    systemDirty: true,
+    hoverFrame: 0,
+    pendingHover: null,
+    hoverKey: "",
+    hoverSize: { width: 0, height: 0 }
   };
   state.lastSavedJson = JSON.stringify(state.data);
 
@@ -388,7 +402,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.4.9-prototype";
+    clone.meta.version = "0.5.0-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -499,7 +513,13 @@
     state.controlCache.clear();
     state.sectorBonusCache.clear();
     state.systemControlCache.clear();
+    state.systemBodySpriteCache.clear();
+    state.systemOrbitLayerCache = null;
+    state.planetBackgroundCache = null;
+    state.staticControlsKey = "";
+    for (const key of Object.keys(state.uiRenderKeys)) state.uiRenderKeys[key] = "";
     state.systemDirty = true;
+    state.planetDirty = true;
   }
 
   function currentUndoUserKey() {
@@ -824,6 +844,19 @@
       if (!event.target.closest?.(".settings-block")) toggleSettingsMenu(false);
     });
 
+    window.addEventListener("resize", () => {
+      if (state.resizeFrame) return;
+      state.resizeFrame = requestAnimationFrame(() => {
+        state.resizeFrame = 0;
+        state.systemBackgroundCache = null;
+        state.planetBackgroundCache = null;
+        state.systemOrbitLayerCache = null;
+        state.systemBodySpriteCache.clear();
+        state.systemDirty = true;
+        state.planetDirty = true;
+      });
+    }, { passive: true });
+
     els.pauseOrbitBtn.addEventListener("click", () => {
       state.paused = !state.paused;
       els.pauseOrbitBtn.textContent = state.paused ? "Resume Orbits" : "Pause Orbits";
@@ -847,12 +880,12 @@
       renderAllPanels();
     });
 
-    els.systemCanvas.addEventListener("mousemove", onSystemMouseMove);
-    els.systemCanvas.addEventListener("mouseleave", () => els.hoverCard.classList.add("hidden"));
+    els.systemCanvas.addEventListener("mousemove", event => scheduleHover("system", event));
+    els.systemCanvas.addEventListener("mouseleave", clearHover);
     els.systemCanvas.addEventListener("click", onSystemClick);
 
-    els.planetCanvas.addEventListener("mousemove", onPlanetMouseMove);
-    els.planetCanvas.addEventListener("mouseleave", () => els.hoverCard.classList.add("hidden"));
+    els.planetCanvas.addEventListener("mousemove", event => scheduleHover("planet", event));
+    els.planetCanvas.addEventListener("mouseleave", clearHover);
     els.planetCanvas.addEventListener("click", onPlanetClick);
     els.planetCanvas.addEventListener("contextmenu", onPlanetContextMenu);
     els.planetCanvas.addEventListener("auxclick", onPlanetAuxClick);
@@ -1112,6 +1145,15 @@ function updatePlanetViewUi() {
   }
 
   function populateStaticControls() {
+    const controlsKey = `${state.dataRevision}:${state.role}`;
+    if (state.staticControlsKey === controlsKey) {
+      els.planetSelect.value = state.selectedBodyId;
+      if (bodiesForPoiSelector().some(body => body.id === state.selectedBodyId)) els.poiBody.value = state.selectedBodyId;
+      if (els.terrainBody && bodiesForPlanetSelector().some(body => body.id === state.selectedBodyId)) els.terrainBody.value = state.selectedBodyId;
+      if (els.bodyEditSelect && bodiesForBodyEditor().some(body => body.id === state.selectedBodyId)) els.bodyEditSelect.value = state.selectedBodyId;
+      return;
+    }
+    state.staticControlsKey = controlsKey;
     populateSelect(els.planetSelect, bodiesForPlanetSelector(), "id", "name");
     populateSelect(els.poiBody, bodiesForPoiSelector(), "id", "name");
     populateSelect(els.poiType, state.data.poiTypes, "id", "label");
@@ -1216,7 +1258,10 @@ function updatePlanetViewUi() {
     populateStaticControls();
     renderSettingsState();
     els.tabButtons.find(button => button.dataset.view === "admin")?.classList.toggle("hidden", !isAdmin());
-    if (state.activeView === "admin" && !isAdmin()) setView("system");
+    if (state.activeView === "admin" && !isAdmin()) {
+      setView("system");
+      return;
+    }
     els.toggleIntelBtn?.classList.toggle("hidden", !isAdmin());
     els.showHidden.closest?.("label")?.classList.add("hidden");
     els.showHidden.disabled = !isAdmin();
@@ -1227,22 +1272,54 @@ function updatePlanetViewUi() {
     els.placementMode?.closest?.("label")?.classList.add("hidden");
     els.placementReadout?.classList.add("hidden");
     els.planetSelect.value = state.selectedBodyId;
-    renderSystemControlPanel();
-    renderSelectedPanel();
-    renderPoiList();
+
+    const intelMode = `${state.role}:${state.showHidden ? 1 : 0}`;
+    const systemControlKey = `${state.dataRevision}:${intelMode}`;
+    if (state.uiRenderKeys.systemControl !== systemControlKey) {
+      state.uiRenderKeys.systemControl = systemControlKey;
+      renderSystemControlPanel();
+    }
+
+    const selectedKey = `${state.dataRevision}:${intelMode}:${state.selectedBodyId || ""}:${state.selectedPoiId || ""}:${state.selectedTerrainId || ""}`;
+    if (state.uiRenderKeys.selected !== selectedKey) {
+      state.uiRenderKeys.selected = selectedKey;
+      renderSelectedPanel();
+    }
+
+    const poiListKey = `${state.dataRevision}:${intelMode}:${state.selectedBodyId || ""}`;
+    if (state.uiRenderKeys.poiList !== poiListKey) {
+      state.uiRenderKeys.poiList = poiListKey;
+      renderPoiList();
+    }
+
     if (state.activeView === "admin" && isAdmin()) {
-      renderAdminLists();
+      const adminKey = `${state.dataRevision}:${state.role}`;
+      if (state.uiRenderKeys.admin !== adminKey) {
+        state.uiRenderKeys.admin = adminKey;
+        renderAdminLists();
+      }
       renderAdminAccessState();
     }
+
     updatePlanetViewUi();
-    renderBodyIntelPanel();
+    const bodyIntelKey = `${state.dataRevision}:${state.selectedBodyId || ""}`;
+    if (state.uiRenderKeys.bodyIntel !== bodyIntelKey) {
+      state.uiRenderKeys.bodyIntel = bodyIntelKey;
+      renderBodyIntelPanel();
+    }
     if (state.activeView === "logistics" || state.activeView === "admin") window.CC_LOGISTICS?.render?.();
-    state.systemDirty = true;
-    state.planetDirty = true;
-    if (state.activeView === "planet") renderPlanet();
+
+    const visualKey = `${state.activeView}:${state.dataRevision}:${intelMode}:${state.selectedBodyId || ""}:${state.selectedPoiId || ""}:${state.selectedTerrainId || ""}:${state.planetViewMode}:${JSON.stringify(state.settings)}`;
+    if (state.lastVisualRenderKey !== visualKey) {
+      state.lastVisualRenderKey = visualKey;
+      state.systemDirty = true;
+      state.planetDirty = true;
+    }
+    if (state.activeView === "planet" && state.planetDirty) renderPlanet();
   }
 
   function flashMessage(message) {
+    state.uiRenderKeys.selected = "";
     els.selectedTitle.textContent = "Command Notice";
     els.selectedInfo.innerHTML = `<p>${escapeHtml(message)}</p>`;
   }
@@ -1280,10 +1357,14 @@ function updatePlanetViewUi() {
 
     if (state.activeView === "system") {
       const dragging = state.dragCamera?.view === "system";
-      const interval = dragging ? 1000 / 45 : 1000 / 30;
+      const targetFps = dragging ? 60 : (state.systemRenderCost > 18 ? 30 : state.systemRenderCost > 11 ? 45 : 60);
+      const interval = 1000 / targetFps;
       if (state.systemDirty || (!state.paused && now - state.lastSystemRender >= interval)) {
         try {
+          const renderStarted = performance.now();
           renderSystem(now);
+          const renderCost = performance.now() - renderStarted;
+          state.systemRenderCost = state.systemRenderCost ? state.systemRenderCost * .82 + renderCost * .18 : renderCost;
           state.lastSystemRender = now;
           state.systemDirty = false;
         } catch (err) {
@@ -1295,7 +1376,7 @@ function updatePlanetViewUi() {
 
     if (state.activeView === "planet" && (state.planetDirty || animatePlanetSatellites)) {
       const planetDragging = state.dragCamera?.view === "planet";
-      const planetInterval = planetDragging ? 1000 / 30 : (animatePlanetSatellites ? 1000 / 30 : 0);
+      const planetInterval = planetDragging ? 1000 / 60 : (animatePlanetSatellites ? 1000 / 45 : 0);
       if (!planetInterval || now - state.lastPlanetRender >= planetInterval) {
         try {
           renderPlanet();
@@ -1428,19 +1509,24 @@ function updatePlanetViewUi() {
     ctx.restore();
   }
 
-  function drawAsteroidBelt(ctx, center, scale) {
-    const belt = bodyById("rantel-cluster");
-    if (!belt?.orbitRadius) return;
-    const radius = belt.orbitRadius * scale;
-    const time = state.animationTime * (belt.orbitSpeed || 0.000006);
-    ctx.save();
-    ctx.strokeStyle = "rgba(210, 230, 255, 0.18)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(center.x, center.y, radius, radius * 0.64, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
+  function asteroidBeltLayer(belt, radius, scale) {
     const asteroidCount = clamp(Math.round(Number(belt.asteroidVisualCount ?? 340)), 100, 1200);
+    const radiusKey = Math.max(1, Math.round(radius));
+    const key = `${asteroidCount}:${radiusKey}`;
+    if (state.systemOrbitLayerCache?.key === key) return state.systemOrbitLayerCache;
+
+    const padding = Math.ceil(72 * Math.max(.65, scale));
+    const half = Math.ceil(radius + padding);
+    const canvas = document.createElement("canvas");
+    canvas.width = half * 2;
+    canvas.height = half * 2;
+    const layerCtx = canvas.getContext("2d");
+    layerCtx.strokeStyle = "rgba(210, 230, 255, 0.18)";
+    layerCtx.lineWidth = 1;
+    layerCtx.beginPath();
+    layerCtx.ellipse(half, half, radius, radius * .64, 0, 0, Math.PI * 2);
+    layerCtx.stroke();
+
     let points = state.asteroidPointCache.get(asteroidCount);
     if (!points) {
       points = Array.from({ length: asteroidCount }, (_, i) => {
@@ -1449,37 +1535,51 @@ function updatePlanetViewUi() {
       });
       state.asteroidPointCache.set(asteroidCount, points);
     }
-    ctx.lineWidth = 1;
+
     for (const p of points) {
-      const angle = p.angle + time;
       const jitter = p.jitter * scale;
       const rx = radius + jitter;
       const ry = (radius + jitter) * .64;
-      const x = center.x + Math.cos(angle) * rx;
-      const y = center.y + Math.sin(angle) * ry;
-      ctx.fillStyle = `rgba(230,238,245,${p.alpha})`;
-      ctx.fillRect(x - p.size, y - p.size * .45, p.size * 2, Math.max(1, p.size * .9));
+      const x = half + Math.cos(p.angle) * rx;
+      const y = half + Math.sin(p.angle) * ry;
+      layerCtx.fillStyle = `rgba(230,238,245,${p.alpha})`;
+      layerCtx.fillRect(x - p.size, y - p.size * .45, p.size * 2, Math.max(1, p.size * .9));
     }
+
+    state.systemOrbitLayerCache = { key, canvas, half };
+    return state.systemOrbitLayerCache;
+  }
+
+  function drawAsteroidBelt(ctx, center, scale) {
+    const belt = bodyById("rantel-cluster");
+    if (!belt?.orbitRadius) return;
+    const radius = belt.orbitRadius * scale;
+    const layer = asteroidBeltLayer(belt, radius, scale);
+    ctx.drawImage(layer.canvas, center.x - layer.half, center.y - layer.half);
 
     if (state.settings.disableNames) {
       state.systemHits.push({ kind: "body", id: belt.id, x: center.x + radius * 1.02, y: center.y - 8, r: Math.max(58, 80 * scale) });
-      ctx.restore();
       return;
     }
 
     const labelX = center.x + radius * 1.02;
     const labelY = center.y - 8;
+    const label = (belt.shortName || belt.name).toUpperCase();
+    ctx.save();
     ctx.font = `${Math.max(16, 25 * scale)}px Arial Narrow, Bahnschrift, sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,.9)";
-    ctx.shadowBlur = 8;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,.78)";
+    ctx.strokeText(label, labelX, labelY);
     ctx.fillStyle = "rgba(244,248,255,.94)";
-    ctx.fillText((belt.shortName || belt.name).toUpperCase(), labelX, labelY);
+    ctx.fillText(label, labelX, labelY);
     ctx.font = `${Math.max(10, 12 * scale)}px Arial Narrow, Bahnschrift, sans-serif`;
+    ctx.lineWidth = 3;
+    ctx.strokeText("OUTER ASTEROID BELT", labelX, labelY + 22);
     ctx.fillStyle = "rgba(109,247,255,.62)";
     ctx.fillText("OUTER ASTEROID BELT", labelX, labelY + 22);
-    const textWidth = ctx.measureText((belt.shortName || belt.name).toUpperCase()).width;
+    const textWidth = ctx.measureText(label).width;
     state.systemHits.push({ kind: "body", id: belt.id, x: labelX + textWidth / 2, y: labelY, r: Math.max(58, textWidth / 2 + 18) });
     ctx.restore();
   }
@@ -1522,35 +1622,72 @@ function updatePlanetViewUi() {
     ctx.restore();
   }
 
-  function drawBody(ctx, body, x, y, r, scale) {
-    if (body.type === "station") return drawStation(ctx, body, x, y, r);
-    const grad = ctx.createRadialGradient(x - r * .38, y - r * .42, r * .12, x, y, r);
+  function systemBodySpriteKey(body, r) {
+    const radius = Math.max(4, Math.round(r * 2) / 2);
+    const textureKey = textureKeyForBody(body) || "none";
+    const hasTexture = state.systemTextureCanvases[textureKey] ? 1 : 0;
+    return `${body.id}:${radius}:${body.type}:${body.template || ""}:${body.colorA || ""}:${body.colorB || ""}:${textureKey}:${hasTexture}`;
+  }
+
+  function buildSystemBodySprite(body, r) {
+    const radius = Math.max(4, Math.round(r * 2) / 2);
+    const pad = body.type === "star" ? 52 : 18;
+    const size = Math.ceil((radius + pad) * 2);
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const spriteCtx = canvas.getContext("2d");
+    const x = size / 2;
+    const y = size / 2;
+    const grad = spriteCtx.createRadialGradient(x - radius * .38, y - radius * .42, radius * .12, x, y, radius);
     grad.addColorStop(0, body.colorB || "#ffffff");
     grad.addColorStop(.52, body.colorA || "#999999");
     grad.addColorStop(1, body.type === "star" ? "#07111d" : "rgba(10, 24, 38, .82)");
 
-    ctx.save();
-    ctx.shadowColor = body.type === "star" ? "rgba(255,95,22,.95)" : "rgba(84,180,255,.32)";
-    ctx.shadowBlur = body.type === "star" ? 42 : 12;
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    spriteCtx.save();
+    spriteCtx.shadowColor = body.type === "star" ? "rgba(255,95,22,.95)" : "rgba(84,180,255,.32)";
+    spriteCtx.shadowBlur = body.type === "star" ? 42 : 12;
+    spriteCtx.fillStyle = grad;
+    spriteCtx.beginPath();
+    spriteCtx.arc(x, y, radius, 0, Math.PI * 2);
+    spriteCtx.fill();
+    spriteCtx.shadowBlur = 0;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.clip();
-    drawBodyTexture(ctx, body, x, y, r);
-    ctx.restore();
+    spriteCtx.save();
+    spriteCtx.beginPath();
+    spriteCtx.arc(x, y, radius, 0, Math.PI * 2);
+    spriteCtx.clip();
+    drawBodyTexture(spriteCtx, body, x, y, radius);
+    spriteCtx.restore();
 
-    ctx.strokeStyle = body.id === state.selectedBodyId ? "rgba(109,247,255,.95)" : "rgba(255,255,255,.18)";
-    ctx.lineWidth = body.id === state.selectedBodyId ? 2 : 1;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+    spriteCtx.strokeStyle = "rgba(255,255,255,.18)";
+    spriteCtx.lineWidth = 1;
+    spriteCtx.beginPath();
+    spriteCtx.arc(x, y, radius, 0, Math.PI * 2);
+    spriteCtx.stroke();
+    spriteCtx.restore();
+    return { canvas, pad, radius };
+  }
+
+  function drawBody(ctx, body, x, y, r, scale) {
+    if (body.type === "station") return drawStation(ctx, body, x, y, r);
+    const key = systemBodySpriteKey(body, r);
+    let sprite = state.systemBodySpriteCache.get(key);
+    if (!sprite) {
+      sprite = buildSystemBodySprite(body, r);
+      if (state.systemBodySpriteCache.size > 180) state.systemBodySpriteCache.clear();
+      state.systemBodySpriteCache.set(key, sprite);
+    }
+    ctx.drawImage(sprite.canvas, x - sprite.canvas.width / 2, y - sprite.canvas.height / 2);
+    if (body.id === state.selectedBodyId) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(109,247,255,.95)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function systemTextureForBody(body) {
@@ -1589,6 +1726,8 @@ function updatePlanetViewUi() {
     cctx.fillRect(0, 0, sampleW, sampleH);
 
     state.systemTextureCanvases[key] = c;
+    state.systemBodySpriteCache.clear();
+    state.systemDirty = true;
   }
 
   function makeGlobeRenderTexture(key, img) {
@@ -1747,16 +1886,22 @@ function updatePlanetViewUi() {
     ctx.font = `${Math.max(11, Math.min(22, r * .62))}px Arial Narrow, Bahnschrift, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.shadowColor = "rgba(0,0,0,.9)";
-    ctx.shadowBlur = 8;
     ctx.fillStyle = "rgba(244,248,255,.94)";
     const label = body.shortName || body.name;
+    const labelText = label.toUpperCase();
     const dy = body.type === "moon" ? r + 6 : r + 12;
-    ctx.fillText(label.toUpperCase(), x, y + dy);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,.82)";
+    ctx.strokeText(labelText, x, y + dy);
+    ctx.fillText(labelText, x, y + dy);
     if (state.showIntelOverlay) {
       ctx.fillStyle = color;
       ctx.font = `${Math.max(9, Math.min(13, r * .42))}px Arial Narrow, Bahnschrift, sans-serif`;
-      ctx.fillText(control.total ? `${dominant ? factionById(dominant.id).code : "UNK"} ${formatPercent((dominant?.value || 0) / control.total * 100)}` : "NO DATA", x, y + dy + 18);
+      const intelText = control.total ? `${dominant ? factionById(dominant.id).code : "UNK"} ${formatPercent((dominant?.value || 0) / control.total * 100)}` : "NO DATA";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,.78)";
+      ctx.strokeText(intelText, x, y + dy + 18);
+      ctx.fillText(intelText, x, y + dy + 18);
     }
     ctx.restore();
   }
@@ -1974,17 +2119,38 @@ function updatePlanetViewUi() {
     return null;
   }
 
+  function clearHover() {
+    state.pendingHover = null;
+    state.hoverKey = "";
+    state.hoverSize = { width: 0, height: 0 };
+    els.hoverCard.classList.add("hidden");
+  }
+
+  function scheduleHover(view, event) {
+    if (state.dragCamera?.view === view) return;
+    state.pendingHover = { view, clientX: event.clientX, clientY: event.clientY };
+    if (state.hoverFrame) return;
+    state.hoverFrame = requestAnimationFrame(() => {
+      state.hoverFrame = 0;
+      const pending = state.pendingHover;
+      state.pendingHover = null;
+      if (!pending || state.dragCamera?.view === pending.view) return;
+      if (pending.view === "system") onSystemMouseMove(pending);
+      else onPlanetMouseMove(pending);
+    });
+  }
+
   function onSystemMouseMove(event) {
     if (state.dragCamera?.view === "system") return;
     const point = getCanvasWorldPoint(event, els.systemCanvas, state.systemCamera);
     const hit = hitTest(state.systemHits, point);
     if (!hit) {
-      els.hoverCard.classList.add("hidden");
+      clearHover();
       return;
     }
     const body = bodyById(hit.id);
     if (!body) return;
-    showHover(event.clientX, event.clientY, bodyHoverHtml(body));
+    showHover(event.clientX, event.clientY, bodyHoverHtml(body), `body:${body.id}`);
   }
 
   function onSystemClick(event) {
@@ -2015,16 +2181,23 @@ function updatePlanetViewUi() {
     `;
   }
 
-  function showHover(clientX, clientY, html) {
-    els.hoverCard.innerHTML = html;
+  function showHover(clientX, clientY, html, key = "") {
+    const contentChanged = state.hoverKey !== key;
+    if (contentChanged) {
+      state.hoverKey = key;
+      els.hoverCard.innerHTML = html;
+      state.hoverSize = { width: 0, height: 0 };
+    }
     els.hoverCard.classList.remove("hidden");
-    const rect = els.hoverCard.getBoundingClientRect();
+    if (!state.hoverSize.width || !state.hoverSize.height) {
+      const rect = els.hoverCard.getBoundingClientRect();
+      state.hoverSize = { width: rect.width, height: rect.height };
+    }
     let left = clientX + 16;
     let top = clientY + 16;
-    if (left + rect.width > window.innerWidth - 12) left = clientX - rect.width - 16;
-    if (top + rect.height > window.innerHeight - 12) top = clientY - rect.height - 16;
-    els.hoverCard.style.left = `${left}px`;
-    els.hoverCard.style.top = `${top}px`;
+    if (left + state.hoverSize.width > window.innerWidth - 12) left = clientX - state.hoverSize.width - 16;
+    if (top + state.hoverSize.height > window.innerHeight - 12) top = clientY - state.hoverSize.height - 16;
+    els.hoverCard.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
   }
 
   function renderPlanet() {
@@ -2115,6 +2288,7 @@ function screenPointToFlatMapCoords(point, rect) {
 function drawFlatMapSurface(ctx, rect, body) {
   const texKey = textureKeyForBody(body);
   const img = state.textures[texKey];
+  const renderSource = state.textureCanvases[texKey] || img;
   ctx.save();
   ctx.fillStyle = "rgba(3, 12, 22, .94)";
   ctx.strokeStyle = "rgba(122, 202, 255, .46)";
@@ -2123,8 +2297,8 @@ function drawFlatMapSurface(ctx, rect, body) {
   ctx.fill();
   ctx.stroke();
   ctx.clip();
-  if (img?.complete) {
-    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+  if (img?.complete && renderSource) {
+    ctx.drawImage(renderSource, rect.x, rect.y, rect.w, rect.h);
   } else {
     const palette = fallbackSurfacePalette(body);
     const grad = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
@@ -2245,33 +2419,44 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
   function drawPlanetBackground(ctx, width, height, body) {
-    const grad = ctx.createRadialGradient(width * .42, height * .24, 10, width * .55, height * .62, Math.max(width, height));
-    grad.addColorStop(0, "rgba(36, 108, 171, .14)");
-    grad.addColorStop(.5, "rgba(2, 8, 17, .88)");
-    grad.addColorStop(1, "rgba(0, 2, 7, 1)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    let cache = state.planetBackgroundCache;
+    if (!cache || cache.width !== w || cache.height !== h) {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const bgCtx = canvas.getContext("2d", { alpha: false });
+      const grad = bgCtx.createRadialGradient(w * .42, h * .24, 10, w * .55, h * .62, Math.max(w, h));
+      grad.addColorStop(0, "rgba(36, 108, 171, .14)");
+      grad.addColorStop(.5, "rgba(2, 8, 17, .88)");
+      grad.addColorStop(1, "rgba(0, 2, 7, 1)");
+      bgCtx.fillStyle = grad;
+      bgCtx.fillRect(0, 0, w, h);
 
-    const count = Math.floor((width * height) / 7000);
-    for (let i = 0; i < count; i++) {
-      const p = pseudoPoint(i + 6400);
-      const alpha = .18 + p.z * .42;
-      ctx.fillStyle = `rgba(235,248,255,${alpha})`;
-      ctx.fillRect(p.x * width, p.y * height, p.z > .94 ? 2 : 1, p.z > .94 ? 2 : 1);
-    }
+      const count = Math.floor((w * h) / 7000);
+      for (let i = 0; i < count; i++) {
+        const p = pseudoPoint(i + 6400);
+        const alpha = .18 + p.z * .42;
+        bgCtx.fillStyle = `rgba(235,248,255,${alpha})`;
+        bgCtx.fillRect(p.x * w, p.y * h, p.z > .94 ? 2 : 1, p.z > .94 ? 2 : 1);
+      }
 
-    ctx.save();
-    ctx.globalAlpha = .06;
-    ctx.strokeStyle = "#dbefff";
-    for (let i = 0; i < 12; i++) {
-      const y = (height / 12) * i;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+      bgCtx.save();
+      bgCtx.globalAlpha = .06;
+      bgCtx.strokeStyle = "#dbefff";
+      for (let i = 0; i < 12; i++) {
+        const y = (h / 12) * i;
+        bgCtx.beginPath(); bgCtx.moveTo(0, y); bgCtx.lineTo(w, y); bgCtx.stroke();
+      }
+      for (let i = 0; i < 18; i++) {
+        const x = (w / 18) * i;
+        bgCtx.beginPath(); bgCtx.moveTo(x, 0); bgCtx.lineTo(x, h); bgCtx.stroke();
+      }
+      bgCtx.restore();
+      cache = state.planetBackgroundCache = canvas;
     }
-    for (let i = 0; i < 18; i++) {
-      const x = (width / 18) * i;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-    }
-    ctx.restore();
+    ctx.drawImage(cache, 0, 0, width, height);
 
     ctx.save();
     ctx.font = "13px Arial Narrow, Bahnschrift, sans-serif";
@@ -2351,15 +2536,25 @@ function roundRectPath(ctx, x, y, w, h, r) {
     delete state.systemTextureCanvases[body.id];
 
     const img = new Image();
+    let retriedWithoutCors = false;
+    if (/^https?:\/\//i.test(source)) img.crossOrigin = "anonymous";
+    img.decoding = "async";
     img.onload = () => {
       state.textures[body.id] = img;
       makeSystemTexture(body.id, img);
       makeGlobeRenderTexture(body.id, img);
       state.planetDirty = true;
+      state.systemDirty = true;
+      if (state.globeRenderer?.textureKey === body.id) state.globeRenderer.textureKey = "";
       if (els.bodyEditSelect?.value === body.id) renderBodyTextureEditor(body);
-      renderAllPanels();
     };
     img.onerror = () => {
+      if (img.crossOrigin && !retriedWithoutCors) {
+        retriedWithoutCors = true;
+        img.removeAttribute("crossorigin");
+        img.src = source;
+        return;
+      }
       console.warn(`Could not load the custom texture for ${body.name || body.id}.`, source);
       if (showError) flashMessage(`The texture for ${body.name || body.id} was saved, but the browser could not load its image URL.`);
     };
@@ -2435,35 +2630,52 @@ function roundRectPath(ctx, x, y, w, h, r) {
   };
   const pendingTextureLoads = new Map();
 
-  function loadTextureImage(key, src, { full = true, systemOnly = false } = {}) {
+  function loadTextureImage(key, src, { full = true, systemOnly = false, systemDisk = false } = {}) {
     if (!key || !src) return Promise.resolve(null);
     const pendingKey = `${key}:${systemOnly ? "system" : "full"}`;
     if (full && state.textures[key]) return Promise.resolve(state.textures[key]);
     if (pendingTextureLoads.has(pendingKey)) return pendingTextureLoads.get(pendingKey);
     const promise = new Promise(resolve => {
       const img = new Image();
+      let retriedWithoutCors = false;
+      if (/^https?:\/\//i.test(src)) img.crossOrigin = "anonymous";
       img.decoding = "async";
       img.onload = () => {
         if (systemOnly) {
-          const c = document.createElement("canvas");
-          c.width = 96; c.height = 96;
-          const cctx = c.getContext("2d");
-          cctx.imageSmoothingEnabled = true;
-          cctx.imageSmoothingQuality = "medium";
-          cctx.drawImage(img, 0, 0, 96, 96);
-          state.systemTextureCanvases[key] = c;
-          state.systemDirty = true;
+          if (systemDisk) {
+            const c = document.createElement("canvas");
+            c.width = 96; c.height = 96;
+            const cctx = c.getContext("2d");
+            cctx.imageSmoothingEnabled = true;
+            cctx.imageSmoothingQuality = "medium";
+            cctx.drawImage(img, 0, 0, 96, 96);
+            state.systemTextureCanvases[key] = c;
+            state.systemBodySpriteCache.clear();
+            state.systemDirty = true;
+          } else {
+            makeSystemTexture(key, img);
+          }
         } else {
           state.textures[key] = img;
           makeSystemTexture(key, img);
           makeGlobeRenderTexture(key, img);
+          if (state.globeRenderer?.textureKey === key) state.globeRenderer.textureKey = "";
           state.planetDirty = true;
           state.systemDirty = true;
         }
         pendingTextureLoads.delete(pendingKey);
         resolve(img);
       };
-      img.onerror = () => { pendingTextureLoads.delete(pendingKey); resolve(null); };
+      img.onerror = () => {
+        if (img.crossOrigin && !retriedWithoutCors) {
+          retriedWithoutCors = true;
+          img.removeAttribute("crossorigin");
+          img.src = src;
+          return;
+        }
+        pendingTextureLoads.delete(pendingKey);
+        resolve(null);
+      };
       img.src = src;
     });
     pendingTextureLoads.set(pendingKey, promise);
@@ -2484,9 +2696,19 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function loadTextures() {
-    // Lightweight system thumbnails load immediately. Large 8K theater maps load only when opened.
-    for (const [key, src] of Object.entries(SYSTEM_DISK_MANIFEST)) loadTextureImage(key, src, { full: false, systemOnly: true });
-    for (const key of ["barren", "oceanic", "urban", "lush"]) loadTextureImage(key, BUILTIN_TEXTURE_MANIFEST[key]);
+    // Every body receives a lightweight System View texture immediately, including uploaded moon maps.
+    // Full-resolution theater textures remain lazy and load only when their body is opened.
+    const customBodyIds = new Set(state.data.bodies.filter(body => customTextureSource(body)).map(body => body.id));
+    for (const [key, src] of Object.entries(SYSTEM_DISK_MANIFEST)) {
+      if (!customBodyIds.has(key)) loadTextureImage(key, src, { full: false, systemOnly: true, systemDisk: true });
+    }
+    for (const key of ["barren", "oceanic", "urban", "lush"]) {
+      loadTextureImage(key, BUILTIN_TEXTURE_MANIFEST[key], { full: false, systemOnly: true });
+    }
+    for (const body of state.data.bodies) {
+      const source = customTextureSource(body);
+      if (source) loadTextureImage(body.id, source, { full: false, systemOnly: true });
+    }
     if (state.activeView === "planet") ensureTextureForBody(bodyById(state.selectedBodyId));
   }
 
@@ -2617,6 +2839,159 @@ function roundRectPath(ctx, x, y, w, h, r) {
     ctx.restore();
   }
 
+  function compileGlobeShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const message = gl.getShaderInfoLog(shader) || "Unknown shader error";
+      gl.deleteShader(shader);
+      throw new Error(message);
+    }
+    return shader;
+  }
+
+  function createGlobeRenderer() {
+    try {
+      const canvas = document.createElement("canvas");
+      const gl = canvas.getContext("webgl", {
+        alpha: true,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: "high-performance"
+      });
+      if (!gl) return null;
+
+      const vertexSource = `
+        attribute vec2 a_position;
+        varying vec2 v_uv;
+        void main() {
+          v_uv = a_position * 0.5 + 0.5;
+          gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+      `;
+      const fragmentSource = `
+        precision highp float;
+        varying vec2 v_uv;
+        uniform sampler2D u_texture;
+        uniform vec2 u_rotation;
+        const float PI = 3.141592653589793;
+        void main() {
+          vec2 p = v_uv * 2.0 - 1.0;
+          float d2 = dot(p, p);
+          if (d2 > 1.0) discard;
+          float z = sqrt(max(0.0, 1.0 - d2));
+          float cx = cos(-u_rotation.y);
+          float sx = sin(-u_rotation.y);
+          float y1 = p.y * cx - z * sx;
+          float z1 = p.y * sx + z * cx;
+          float cy = cos(-u_rotation.x);
+          float sy = sin(-u_rotation.x);
+          float x0 = p.x * cy + z1 * sy;
+          float z0 = -p.x * sy + z1 * cy;
+          float lat = asin(clamp(y1, -1.0, 1.0));
+          float lon = atan(x0, z0);
+          float u = fract((lon + PI) / (2.0 * PI));
+          float v = clamp(0.5 + lat / PI, 0.0, 1.0);
+          gl_FragColor = texture2D(u_texture, vec2(u, v));
+        }
+      `;
+
+      const program = gl.createProgram();
+      gl.attachShader(program, compileGlobeShader(gl, gl.VERTEX_SHADER, vertexSource));
+      gl.attachShader(program, compileGlobeShader(gl, gl.FRAGMENT_SHADER, fragmentSource));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || "Could not link globe shader.");
+      gl.useProgram(program);
+
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+      const position = gl.getAttribLocation(program, "a_position");
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+
+      const texture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.uniform1i(gl.getUniformLocation(program, "u_texture"), 0);
+
+      const renderer = {
+        canvas,
+        gl,
+        program,
+        texture,
+        rotationLocation: gl.getUniformLocation(program, "u_rotation"),
+        textureKey: "",
+        failedKeys: new Set(),
+        size: 0
+      };
+      canvas.addEventListener("webglcontextlost", event => {
+        event.preventDefault();
+        state.globeRenderer = null;
+        state.globeRendererUnavailable = false;
+        state.planetDirty = true;
+      });
+      return renderer;
+    } catch (err) {
+      console.warn("WebGL globe renderer unavailable; using Canvas fallback.", err);
+      return null;
+    }
+  }
+
+  function renderGlobeWithWebGL(ctx, globe, body, img) {
+    const key = textureKeyForBody(body);
+    if (!key || state.globeRendererUnavailable) return false;
+    const renderer = state.globeRenderer || (state.globeRenderer = createGlobeRenderer());
+    if (!renderer) {
+      state.globeRendererUnavailable = true;
+      return false;
+    }
+    if (renderer.failedKeys.has(key)) return false;
+    const gl = renderer.gl;
+    const desiredSize = clamp(Math.round(globe.r * 2 * Math.min(window.devicePixelRatio || 1, 1.25)), 256, 1024);
+    if (renderer.size !== desiredSize) {
+      renderer.canvas.width = desiredSize;
+      renderer.canvas.height = desiredSize;
+      renderer.size = desiredSize;
+      gl.viewport(0, 0, desiredSize, desiredSize);
+    }
+
+    if (renderer.textureKey !== key) {
+      try {
+        const source = state.textureCanvases[key] || img;
+        gl.bindTexture(gl.TEXTURE_2D, renderer.texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        renderer.textureKey = key;
+      } catch (err) {
+        renderer.failedKeys.add(key);
+        console.warn(`WebGL could not upload the texture for ${body.name || key}; using Canvas fallback.`, err);
+        return false;
+      }
+    }
+
+    gl.useProgram(renderer.program);
+    gl.uniform2f(renderer.rotationLocation, state.planetRotation.lon, state.planetRotation.lat);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = state.dragCamera?.view === "planet" ? "medium" : "high";
+    ctx.drawImage(renderer.canvas, globe.cx - globe.r, globe.cy - globe.r, globe.r * 2, globe.r * 2);
+    ctx.restore();
+    return true;
+  }
+
   function renderTexturedSphere(ctx, globe, body) {
     const img = state.textures[textureKeyForBody(body)];
     if (!textureReady(img)) {
@@ -2625,11 +3000,28 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }
 
     try {
-      drawEquirectangularTextureOnSphere(ctx, globe, body, img);
+      if (!renderGlobeWithWebGL(ctx, globe, body, img)) drawEquirectangularTextureOnSphere(ctx, globe, body, img);
+      drawGlobeSurfaceShade(ctx, globe);
     } catch (err) {
-      console.warn("Direct texture sphere failed; falling back to procedural globe.", err);
+      console.warn("Textured sphere render failed; falling back to procedural globe.", err);
       drawProceduralSphereFallback(ctx, globe, body);
     }
+  }
+
+  function drawGlobeSurfaceShade(ctx, globe) {
+    const { cx, cy, r } = globe;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    const shade = ctx.createRadialGradient(cx - r * .32, cy - r * .34, r * .08, cx, cy, r);
+    shade.addColorStop(0, "rgba(255,255,255,.10)");
+    shade.addColorStop(.44, "rgba(255,255,255,0)");
+    shade.addColorStop(.78, "rgba(0,0,0,.18)");
+    shade.addColorStop(1, "rgba(0,0,0,.56)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
   }
 
   function textureReady(img) {
@@ -2648,7 +3040,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     // Adaptive sampling keeps the 8K source responsive while preserving the satellite-globe look.
     // The render texture is already downscaled to the visible needs of the canvas, so the globe does not
     // spend time drawing invisible 8K detail.
-    const step = dragging ? 5 : (zoom >= 3.6 ? 2 : 3);
+    const step = dragging ? 8 : (zoom >= 3.6 ? 2 : 3);
     const sampleW = Math.max(1, Math.ceil(step * iw / Math.max(1, r * Math.PI * 2)));
     const sampleH = Math.max(1, Math.ceil(step * ih / Math.max(1, r * Math.PI)));
 
@@ -2681,13 +3073,6 @@ function roundRectPath(ctx, x, y, w, h, r) {
       }
     }
 
-    const shade = ctx.createRadialGradient(cx - r * .32, cy - r * .34, r * .08, cx, cy, r);
-    shade.addColorStop(0, "rgba(255,255,255,.10)");
-    shade.addColorStop(.44, "rgba(255,255,255,0)");
-    shade.addColorStop(.78, "rgba(0,0,0,.18)");
-    shade.addColorStop(1, "rgba(0,0,0,.56)");
-    ctx.fillStyle = shade;
-    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     ctx.restore();
   }
 
@@ -3338,22 +3723,22 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (state.dragCamera?.view === "planet") return;
     const hit = hitTest(state.planetHits, getCanvasWorldPoint(event, els.planetCanvas, state.planetCamera));
     if (!hit) {
-      els.hoverCard.classList.add("hidden");
+      clearHover();
       return;
     }
     if (hit.kind === "poi") {
       const poi = state.data.pois.find(p => p.id === hit.id);
-      if (poi) showHover(event.clientX, event.clientY, poiHoverHtml(poi));
+      if (poi) showHover(event.clientX, event.clientY, poiHoverHtml(poi), `poi:${poi.id}`);
       return;
     }
     if (hit.kind === "terrain") {
       const terrain = state.data.terrain.find(t => t.id === hit.id);
-      if (terrain) showHover(event.clientX, event.clientY, terrainHoverHtml(terrain));
+      if (terrain) showHover(event.clientX, event.clientY, terrainHoverHtml(terrain), `terrain:${terrain.id}`);
       return;
     }
     if (hit.kind === "body") {
       const body = bodyById(hit.id);
-      if (body) showHover(event.clientX, event.clientY, bodyHoverHtml(body));
+      if (body) showHover(event.clientX, event.clientY, bodyHoverHtml(body), `body:${body.id}`);
     }
   }
 
@@ -4839,6 +5224,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
     state.textures = {};
     state.textureCanvases = {};
     state.systemTextureCanvases = {};
+    state.systemBodySpriteCache.clear();
+    state.systemOrbitLayerCache = null;
+    state.planetBackgroundCache = null;
+    state.globeRenderer = null;
+    state.globeRendererUnavailable = false;
     loadTextures();
     state.planetDirty = true;
     renderAllPanels();
@@ -4846,6 +5236,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   window.CC_ATLAS_API = {
     getRole: () => state.role,
+    getActiveView: () => state.activeView,
     isAdmin,
     isRoot,
     isCommand: () => state.role === "command",

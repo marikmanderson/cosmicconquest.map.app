@@ -1,7 +1,7 @@
 window.CC_SEED_DATA = {
   meta: {
     appName: "Cosmic Conquest — Osiris Command Atlas",
-    version: "0.4.9-prototype",
+    version: "0.5.0-prototype",
     notes: "Client-side campaign atlas prototype with flat tactical map + globe theater. Persisted with localStorage. Export JSON before heavy edits."
   },
   factions: [

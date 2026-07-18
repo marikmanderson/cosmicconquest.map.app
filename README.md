@@ -2,7 +2,7 @@
 
 The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 
-## What is in v0.4.9
+## What is in v0.5.0
 
 - Animated Osiris System command map with planets, moons, stations, and the Rantel Cluster.
 - Rantel Cluster-only asteroid-density slider for controlling decorative System View belt population.
@@ -18,6 +18,17 @@ The Cosmic Conquest interactive campaign atlas and shared logistics tracker.
 - Public intel vs. hidden/GM-only visibility behavior.
 - JSON export/import for campaign data.
 - LocalStorage persistence.
+
+
+## New in v0.5.0
+
+- Uploaded moon textures are visible again in System View through lightweight thumbnails.
+- System bodies and the Rantel asteroid belt use cached render layers rather than being rebuilt every frame.
+- Globe View uses GPU-accelerated WebGL projection when supported, with an automatic Canvas fallback.
+- Flat Map and Planet Theater backgrounds reuse reduced/cached render surfaces.
+- Hover cards, resize handling, Admin lists, Logistics lists, and unchanged information panels perform less repeated work.
+- Expensive live panel blur and full-screen blend effects were replaced with visually similar static styling.
+- **Revert My Last Save** remains available and unchanged.
 
 ## Controls
 
@@ -98,4 +109,4 @@ The Celestial Bodies Editor includes a public description field and optional fac
 
 ## Revert and performance
 
-Settings includes **Revert My Last Save** for Command/Admin/Root users. It reverses only the most recent save made by that account on the current browser and preserves fields that were changed again by another user. The render loop now pauses hidden views, caps animation work, and caches repeated calculations.
+Settings includes **Revert My Last Save** for Command/Admin/Root users. It reverses only the most recent save made by that account on the current browser and preserves fields that were changed again by another user. The v0.5.0 renderer restores moon visuals while moving globe projection to WebGL where available, caching system sprites and decorative layers, and avoiding repeated hidden or unchanged UI work.

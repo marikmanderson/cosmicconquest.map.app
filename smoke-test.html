@@ -1,15 +1,27 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Cosmic Conquest Atlas v0.4.8 Smoke Test</title>
-<h1>Cosmic Conquest Atlas v0.4.8 Smoke Test</h1>
+<title>Cosmic Conquest Atlas v0.5.0 Smoke Test</title>
+<h1>Cosmic Conquest Atlas v0.5.0 Smoke Test</h1>
 <script>
-Promise.all([fetch('js/app.js').then(r=>r.text()), fetch('index.html').then(r=>r.text())]).then(([app,html])=>{
+Promise.all([
+  fetch('js/app.js').then(r => r.text()),
+  fetch('js/logistics.js').then(r => r.text()),
+  fetch('css/styles.css').then(r => r.text()),
+  fetch('index.html').then(r => r.text())
+]).then(([app, logistics, css, html]) => {
   const tests = [
-    ['Primary-body name lock', app.includes('bodyNameIsProtected') && app.includes('canonicalProtectedBodyName')],
-    ['Faction merge', app.includes('mergeSelectedFaction') && html.includes('factionMergeSource')],
-    ['Faction ordering', app.includes('moveFaction') && app.includes('data-move-faction')],
-    ['Persistent merged-faction removal', app.includes('deletedFactionIds')]
+    ['Revert Last Save preserved', app.includes('revertLastUserSave') && html.includes('revertLastSaveBtn')],
+    ['System moon texture thumbnails', app.includes('customTextureSource(body)') && app.includes('systemOnly: true')],
+    ['Cached system body sprites', app.includes('systemBodySpriteCache') && app.includes('buildSystemBodySprite')],
+    ['Cached asteroid layer', app.includes('asteroidBeltLayer') && app.includes('systemOrbitLayerCache')],
+    ['WebGL globe acceleration', app.includes('renderGlobeWithWebGL') && app.includes('createGlobeRenderer')],
+    ['Hidden Logistics rendering skipped', logistics.includes('getActiveView') && logistics.includes('state.renderDirty = true')],
+    ['Live backdrop blur disabled', css.includes('backdrop-filter: none')]
   ];
-  for (const [name,pass] of tests) document.body.insertAdjacentHTML('beforeend', `<p>${name}: ${pass ? 'PASS' : 'FAIL'}</p>`);
+  for (const [name, pass] of tests) {
+    document.body.insertAdjacentHTML('beforeend', `<p>${name}: ${pass ? 'PASS' : 'FAIL'}</p>`);
+  }
+}).catch(error => {
+  document.body.insertAdjacentHTML('beforeend', `<p>Smoke test error: ${String(error)}</p>`);
 });
 </script>

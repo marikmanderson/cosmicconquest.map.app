@@ -1,5 +1,17 @@
 # Cosmic Conquest Atlas — Changelog
 
+## v0.5.0-prototype
+- Restored uploaded moon textures in System View while keeping full-resolution Planet Theater maps lazy-loaded.
+- Added cached off-screen sprites for stars, planets, and moons so textured bodies are not rebuilt every animation frame.
+- Converted the decorative Rantel asteroid belt into a cached visual layer, preserving its appearance while removing hundreds of repeated draw calls.
+- Added a WebGL globe projector for GPU-accelerated rotation, with the existing Canvas renderer retained as an automatic fallback.
+- Reduced Flat Map texture scaling work by drawing from the existing 2048×1024 render texture.
+- Cached Planet Theater background stars and grid lines.
+- Throttled hover-card work, coalesced resize handling, and skipped unchanged panel/list rebuilds.
+- Prevented hidden Logistics and Admin views from performing heavy DOM renders.
+- Removed expensive live full-panel backdrop blur and full-screen blend operations while preserving the glass-panel appearance.
+- Preserved the per-account **Revert My Last Save** feature from v0.4.9.
+
 ## v0.4.9-prototype
 - Added a per-account **Revert My Last Save** control in Settings.
 - Revert stores only the user’s most recent save on that browser and applies a field-aware reverse merge, preserving fields changed by other users afterward.
