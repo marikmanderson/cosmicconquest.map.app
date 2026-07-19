@@ -1,5 +1,10 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.2
+- Added Hidden Notes editing to the Admin Quick Edit POI dialog without exposing the field to Command accounts.
+- Added live 12 × 6 grid coordinates for Flat Map and Globe View hover/click positions.
+- Added map coordinates beneath selected POI and terrain names in the Selected Asset panel.
+
 ## v0.5.1
 - Fixed Planet Theater globe view for uploaded moon textures by routing moon globe rendering through the optimized Canvas projection path.
 - Added a browser tab favicon using the GAR logo already shown in the Atlas header.

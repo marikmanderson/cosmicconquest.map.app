@@ -69,7 +69,9 @@
     hoverFrame: 0,
     pendingHover: null,
     hoverKey: "",
-    hoverSize: { width: 0, height: 0 }
+    hoverSize: { width: 0, height: 0 },
+    planetHoverCoords: null,
+    planetPinnedCoords: null
   };
   state.lastSavedJson = JSON.stringify(state.data);
 
@@ -117,11 +119,14 @@
     showHiddenSettingsWrap: document.getElementById("showHiddenSettingsWrap"),
     placementMode: document.getElementById("placementMode"),
     placementReadout: document.getElementById("placementReadout"),
+    planetCoordinateMode: document.getElementById("planetCoordinateMode"),
+    planetCoordinateReadout: document.getElementById("planetCoordinateReadout"),
     poiLegend: document.getElementById("poiLegend"),
     controlModePill: document.getElementById("controlModePill"),
     systemControlBars: document.getElementById("systemControlBars"),
     calculationNote: document.getElementById("calculationNote"),
     selectedTitle: document.getElementById("selectedTitle"),
+    selectedCoordinates: document.getElementById("selectedCoordinates"),
     selectedInfo: document.getElementById("selectedInfo"),
     poiList: document.getElementById("poiList"),
     detailDialog: document.getElementById("detailDialog"),
@@ -257,6 +262,8 @@
     quickPoiDisplaySize: document.getElementById("quickPoiDisplaySize"),
     quickPoiTextSize: document.getElementById("quickPoiTextSize"),
     quickPoiDescription: document.getElementById("quickPoiDescription"),
+    quickPoiGmNotesLabel: document.getElementById("quickPoiGmNotesLabel"),
+    quickPoiGmNotes: document.getElementById("quickPoiGmNotes"),
     quickPoiFullEditBtn: document.getElementById("quickPoiFullEditBtn"),
     quickPoiDeleteBtn: document.getElementById("quickPoiDeleteBtn")
   };
@@ -885,7 +892,7 @@
     els.systemCanvas.addEventListener("click", onSystemClick);
 
     els.planetCanvas.addEventListener("mousemove", event => scheduleHover("planet", event));
-    els.planetCanvas.addEventListener("mouseleave", clearHover);
+    els.planetCanvas.addEventListener("mouseleave", onPlanetMouseLeave);
     els.planetCanvas.addEventListener("click", onPlanetClick);
     els.planetCanvas.addEventListener("contextmenu", onPlanetContextMenu);
     els.planetCanvas.addEventListener("auxclick", onPlanetAuxClick);
@@ -897,6 +904,9 @@
       state.selectedBodyId = els.planetSelect.value;
       state.selectedPoiId = null;
       state.selectedTerrainId = null;
+      state.planetHoverCoords = null;
+      state.planetPinnedCoords = null;
+      renderPlanetCoordinateReadout();
       resetPlanetCamera();
       state.planetDirty = true;
       renderAllPanels();
@@ -2811,6 +2821,62 @@ function roundRectPath(ctx, x, y, w, h, r) {
     return { x: xCoord, y: yCoord, lon, lat };
   }
 
+  const PLANET_GRID_COLUMNS = 12;
+  const PLANET_GRID_ROWS = 6;
+
+  function formatPlanetCoordinates(x, y) {
+    if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
+    const nx = clamp(Number(x), 0, 1);
+    const ny = clamp(Number(y), 0, 1);
+    const column = Math.min(PLANET_GRID_COLUMNS, Math.floor(nx * PLANET_GRID_COLUMNS) + 1);
+    const row = Math.min(PLANET_GRID_ROWS, Math.floor(ny * PLANET_GRID_ROWS) + 1);
+    const xLabel = String(column).padStart(2, "0");
+    const yLabel = String(row).padStart(2, "0");
+    return { x: nx, y: ny, column, row, text: `X ${xLabel} · Y ${yLabel}` };
+  }
+
+  function coordinatesAtPlanetEvent(event) {
+    const body = bodyById(state.selectedBodyId);
+    if (!bodyHasTheater(body)) return null;
+    const point = getCanvasWorldPoint(event, els.planetCanvas, state.planetCamera);
+    const { width, height } = els.planetCanvas.getBoundingClientRect();
+    return state.planetViewMode === "flat"
+      ? screenPointToFlatMapCoords(point, flatMapBounds(width, height))
+      : screenPointToPlanetCoords(point, globeBounds(width, height, body));
+  }
+
+  function renderPlanetCoordinateReadout() {
+    if (!els.planetCoordinateReadout) return;
+    const active = state.planetHoverCoords || state.planetPinnedCoords;
+    if (!active) {
+      els.planetCoordinateReadout.textContent = "Move the cursor over the map or globe.";
+      if (els.planetCoordinateMode) els.planetCoordinateMode.textContent = "Grid 12 × 6";
+      return;
+    }
+    const formatted = formatPlanetCoordinates(active.x, active.y);
+    if (!formatted) return;
+    const prefix = state.planetHoverCoords ? "Hover" : "Selected";
+    els.planetCoordinateReadout.textContent = `${prefix}: ${formatted.text}`;
+    if (els.planetCoordinateMode) els.planetCoordinateMode.textContent = `Grid square ${formatted.column}/${formatted.row}`;
+  }
+
+  function setPlanetHoverCoordinates(coords) {
+    state.planetHoverCoords = coords ? { x: coords.x, y: coords.y } : null;
+    renderPlanetCoordinateReadout();
+  }
+
+  function pinPlanetCoordinates(coords) {
+    if (!coords) return;
+    state.planetPinnedCoords = { x: coords.x, y: coords.y };
+    renderPlanetCoordinateReadout();
+  }
+
+  function onPlanetMouseLeave() {
+    clearHover();
+    state.planetHoverCoords = null;
+    renderPlanetCoordinateReadout();
+  }
+
   function drawFallbackSurfaceDetail(ctx, globe, body, palette) {
     // Intentionally minimal: no random ovals, squiggles, or generated terrain marks.
     // Planet detail should come from real texture assets or admin-created POIs.
@@ -3727,6 +3793,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function onPlanetMouseMove(event) {
     if (state.dragCamera?.view === "planet") return;
+    const coords = coordinatesAtPlanetEvent(event);
+    setPlanetHoverCoordinates(coords);
     const hit = hitTest(state.planetHits, getCanvasWorldPoint(event, els.planetCanvas, state.planetCamera));
     if (!hit) {
       clearHover();
@@ -3765,6 +3833,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       ? screenPointToFlatMapCoords(point, flatMapBounds(width, height))
       : screenPointToPlanetCoords(point, globeBounds(width, height, body));
     if (!coords) return;
+    pinPlanetCoordinates(coords);
     const forceType = state.role === "command" && !isAdmin() ? "tactical" : undefined;
     showQuickPoiEditor({ mode: "create", bodyId: body.id, x: coords.x, y: coords.y, forceType });
   }
@@ -3787,6 +3856,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
       return;
     }
     const point = getCanvasWorldPoint(event, els.planetCanvas, state.planetCamera);
+    const bodyForCoords = bodyById(state.selectedBodyId);
+    const { width: coordinateWidth, height: coordinateHeight } = els.planetCanvas.getBoundingClientRect();
+    const clickedCoords = bodyHasTheater(bodyForCoords)
+      ? (state.planetViewMode === "flat"
+        ? screenPointToFlatMapCoords(point, flatMapBounds(coordinateWidth, coordinateHeight))
+        : screenPointToPlanetCoords(point, globeBounds(coordinateWidth, coordinateHeight, bodyForCoords)))
+      : null;
+    if (clickedCoords) pinPlanetCoordinates(clickedCoords);
     const hit = hitTest(state.planetHits, point);
     if (hit) {
       if (hit.kind === "poi") {
@@ -4059,6 +4136,18 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }).join("")}</div>`;
   }
 
+  function setSelectedCoordinates(asset) {
+    if (!els.selectedCoordinates) return;
+    const formatted = asset ? formatPlanetCoordinates(asset.x, asset.y) : null;
+    if (!formatted) {
+      els.selectedCoordinates.textContent = "";
+      els.selectedCoordinates.classList.add("hidden");
+      return;
+    }
+    els.selectedCoordinates.textContent = `Map coordinates: ${formatted.text}`;
+    els.selectedCoordinates.classList.remove("hidden");
+  }
+
   function renderSelectedPanel() {
     const poi = state.selectedPoiId ? state.data.pois.find(p => p.id === state.selectedPoiId) : null;
     if (poi && canSee(poi)) {
@@ -4066,6 +4155,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       const faction = factionById(poi.factionId);
       const body = bodyById(poi.bodyId);
       els.selectedTitle.textContent = poi.name;
+      setSelectedCoordinates(poi);
       els.selectedInfo.innerHTML = `
         <p>${escapeHtml(poi.description || "No strategic paragraph entered for this POI yet.")}</p>
         <div class="meta-grid">
@@ -4084,6 +4174,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (terrain) {
       const body = bodyById(terrain.bodyId);
       els.selectedTitle.textContent = terrain.name;
+      setSelectedCoordinates(terrain);
       els.selectedInfo.innerHTML = `
         <p>${escapeHtml(terrain.hazard || "No terrain note entered for this feature yet.")}</p>
         <div class="meta-grid">
@@ -4100,6 +4191,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (!body) return;
     const control = calculateBodyControl(body.id, currentIntelIsActual());
     els.selectedTitle.textContent = body.name;
+    setSelectedCoordinates(null);
     els.selectedInfo.innerHTML = `
       <p>${escapeHtml(body.description || "No briefing text entered for this body yet.")}</p>
       <div class="meta-grid">
@@ -4422,6 +4514,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.quickPoiDisplaySize.value = Number(poi?.displaySize || defaultPoiDisplaySize(els.quickPoiType.value, els.quickPoiStrategicTier.value, poi?.modelTemplateId || els.quickPoiIcon.value)).toFixed(2);
     els.quickPoiTextSize.value = Number(poi?.textSize ?? 1).toFixed(2);
     els.quickPoiDescription.value = poi?.description || "";
+    if (els.quickPoiGmNotes) els.quickPoiGmNotes.value = poi?.gmNotes || "";
+    els.quickPoiGmNotesLabel?.classList.toggle("hidden", !isAdmin());
+    if (els.quickPoiGmNotes) els.quickPoiGmNotes.disabled = !isAdmin();
     updateQuickPoiFormMode();
     updateIconPreview(els.quickPoiIcon, els.quickPoiIconPreview, els.quickPoiOwner, els.quickPoiColor, els.quickPoiType);
     els.quickPoiType.disabled = state.role === "command" && !isAdmin();
@@ -4440,6 +4535,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function quickPoiPayload() {
     const typeId = els.quickPoiType.value;
+    const existing = state.data.pois.find(poi => poi.id === els.quickPoiId.value);
     return {
       id: els.quickPoiId.value || uuid("poi"),
       bodyId: els.quickPoiBody.value || state.selectedBodyId,
@@ -4459,7 +4555,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       x: clamp(Number(els.quickPoiX.value || .5), 0, 1),
       y: clamp(Number(els.quickPoiY.value || .5), 0, 1),
       description: els.quickPoiDescription.value.trim(),
-      gmNotes: ""
+      gmNotes: isAdmin() ? (els.quickPoiGmNotes?.value || "").trim() : (existing?.gmNotes || "")
     };
   }
 

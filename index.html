@@ -111,6 +111,13 @@
                 <h3>Admin Quick Tools</h3>
                 <p>Middle-click open map territory to quick-create a POI. Right-click an existing POI to quick-edit, open full edit, or delete.</p>
               </div>
+              <div class="planet-coordinate-card" aria-live="polite">
+                <div class="planet-coordinate-heading">
+                  <h3>Map Coordinates</h3>
+                  <span id="planetCoordinateMode">Grid 12 × 6</span>
+                </div>
+                <div id="planetCoordinateReadout" class="planet-coordinate-readout">Move the cursor over the map or globe.</div>
+              </div>
               <div class="body-intel-card">
                 <h3>World Information</h3>
                 <div id="bodyIntel" class="body-intel-list"></div>
@@ -457,6 +464,7 @@
             <div>
               <p class="eyebrow">Selected Asset</p>
               <h2 id="selectedTitle">Nothing selected</h2>
+              <p id="selectedCoordinates" class="selected-coordinates hidden"></p>
             </div>
           </div>
           <div id="selectedInfo" class="selected-info">
@@ -496,6 +504,7 @@
       <label>Display Size<input id="quickPoiDisplaySize" type="number" min="0.25" max="3" step="0.05" value="1" /></label>
       <label>Label Text Size<input id="quickPoiTextSize" type="number" min="0.5" max="3" step="0.05" value="1" title="Multiplier for the POI name shown on the map." /></label>
       <label class="full-field">Briefing Text<textarea id="quickPoiDescription" rows="3" placeholder="Optional GM/player briefing paragraph."></textarea></label>
+      <label id="quickPoiGmNotesLabel" class="full-field">Hidden Notes<textarea id="quickPoiGmNotes" rows="3" placeholder="Admin-only notes hidden from players and Command accounts."></textarea></label>
       <div class="form-actions full-field">
         <button class="primary-button" type="submit">Save POI</button>
         <button class="ghost-button" type="button" id="quickPoiFullEditBtn">Full Edit</button>
