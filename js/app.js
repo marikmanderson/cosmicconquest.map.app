@@ -71,7 +71,8 @@
     hoverKey: "",
     hoverSize: { width: 0, height: 0 },
     planetHoverCoords: null,
-    planetPinnedCoords: null
+    planetPinnedCoords: null,
+    poiClipboard: null
   };
   state.lastSavedJson = JSON.stringify(state.data);
 
@@ -708,6 +709,19 @@
     return ["admin", "root"].includes(state.role);
   }
 
+  function canUsePoiClipboard() {
+    return ["command", "admin", "root"].includes(state.role);
+  }
+
+  function canCopyPoi(poi) {
+    if (!poi || !canUsePoiClipboard()) return false;
+    return state.role !== "command" || normalizePoiTypeId(poi.type) === "tactical";
+  }
+
+  function canPasteCopiedPoi() {
+    return Boolean(state.poiClipboard && canCopyPoi(state.poiClipboard));
+  }
+
   function currentIntelIsActual() {
     return isGmPlus() && state.showHidden;
   }
@@ -1277,7 +1291,7 @@ function updatePlanetViewUi() {
     els.showHidden.checked = isAdmin() && state.showHidden;
     if (els.showHiddenSettings) els.showHiddenSettings.checked = isAdmin() && state.showHidden;
     els.placementMode.checked = state.placementMode;
-    els.quickPoiTools?.classList.toggle("hidden", !isAdmin());
+    els.quickPoiTools?.classList.toggle("hidden", !canUsePoiClipboard());
     els.placementMode?.closest?.("label")?.classList.add("hidden");
     els.placementReadout?.classList.add("hidden");
     els.planetSelect.value = state.selectedBodyId;
@@ -3838,15 +3852,26 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function onPlanetContextMenu(event) {
-    if (!isAdmin()) return;
+    if (!canUsePoiClipboard()) return;
     event.preventDefault();
     hideQuickPoiMenu();
+
+    // A right-button drag pans the map/globe. Do not open a clipboard menu when that drag ends.
+    if (state.suppressPlanetClick) {
+      state.suppressPlanetClick = false;
+      return;
+    }
+
+    const body = bodyById(state.selectedBodyId);
+    if (!bodyHasTheater(body)) return;
     const point = getCanvasWorldPoint(event, els.planetCanvas, state.planetCamera);
     const hit = hitTest(state.planetHits, point);
-    if (hit?.kind === "poi") {
-      const poi = state.data.pois.find(p => p.id === hit.id);
-      if (poi) return showQuickPoiMenu(event.clientX, event.clientY, poi);
-    }
+    const poi = hit?.kind === "poi" ? state.data.pois.find(item => item.id === hit.id) : null;
+    const coords = coordinatesAtPlanetEvent(event);
+    if (!coords) return;
+
+    pinPlanetCoordinates(coords);
+    showQuickPoiMenu(event.clientX, event.clientY, { poi, coords, bodyId: body.id });
   }
 
   function onPlanetClick(event) {
@@ -4455,28 +4480,100 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (els.quickPoiMenu) els.quickPoiMenu.innerHTML = "";
   }
 
-  function showQuickPoiMenu(clientX, clientY, poi) {
-    if (!els.quickPoiMenu) return;
-    els.quickPoiMenu.innerHTML = `
-      <button type="button" data-action="quick-edit">Quick Edit</button>
-      <button type="button" data-action="full-edit">Full Edit in Admin Panel</button>
-      <button type="button" data-action="delete" class="danger-menu-item">Delete POI</button>
-    `;
+  function copyPoiToClipboard(poi) {
+    if (!canCopyPoi(poi)) {
+      const restriction = state.role === "command" ? "Command accounts can copy and paste Tactical Point POIs only." : "This POI cannot be copied in the current role.";
+      return flashMessage(restriction);
+    }
+    state.poiClipboard = deepClone(poi);
+    flashMessage(`Copied ${poi.name}. Right-click another map location to paste it.`);
+  }
+
+  function clearPoiClipboard() {
+    const copiedName = state.poiClipboard?.name || "POI";
+    state.poiClipboard = null;
+    hideQuickPoiMenu();
+    flashMessage(`Cleared copied POI: ${copiedName}.`);
+  }
+
+  function pastePoiFromClipboard(bodyId, coords) {
+    if (!canPasteCopiedPoi() || !coords || !bodyId) {
+      return flashMessage(state.role === "command"
+        ? "Command accounts can paste copied Tactical Point POIs only."
+        : "Copy a POI before pasting it.");
+    }
+    const source = state.poiClipboard;
+    const pasted = deepClone(source);
+    pasted.id = uuid("poi");
+    pasted.bodyId = bodyId;
+    pasted.x = clamp(Number(coords.x), 0, 1);
+    pasted.y = clamp(Number(coords.y), 0, 1);
+    if (bodyId !== source.bodyId) pasted.sectorId = null;
+
+    state.data.pois.push(pasted);
+    state.selectedBodyId = bodyId;
+    state.selectedPoiId = pasted.id;
+    state.selectedTerrainId = null;
+    pinPlanetCoordinates(coords);
+    saveData();
+    state.planetDirty = true;
+    hideQuickPoiMenu();
+    renderAllPanels();
+
+    const coordinate = formatPlanetCoordinates(pasted.x, pasted.y);
+    flashMessage(`Pasted ${pasted.name}${coordinate ? ` at ${coordinate.text}` : ""}. The copied POI remains available for more placements.`);
+  }
+
+  function showQuickPoiMenu(clientX, clientY, { poi = null, coords = null, bodyId = null } = {}) {
+    if (!els.quickPoiMenu || !canUsePoiClipboard()) return;
+
+    const buttons = [];
+    if (poi && isAdmin()) {
+      buttons.push('<button type="button" data-action="quick-edit">Quick Edit</button>');
+      buttons.push('<button type="button" data-action="full-edit">Full Edit in Admin Panel</button>');
+    }
+    if (poi && canCopyPoi(poi)) {
+      buttons.push('<button type="button" data-action="copy">Copy POI</button>');
+    }
+    if (coords && bodyId && canPasteCopiedPoi()) {
+      const copiedName = escapeHtml(state.poiClipboard?.name || "Copied POI");
+      buttons.push(`<button type="button" data-action="paste">Paste “${copiedName}” Here</button>`);
+      buttons.push('<button type="button" data-action="clear-copy">Clear Copied POI</button>');
+    }
+    if (poi && isAdmin()) {
+      buttons.push('<button type="button" data-action="delete" class="danger-menu-item">Delete POI</button>');
+    }
+
+    if (!buttons.length) {
+      hideQuickPoiMenu();
+      return;
+    }
+
+    els.quickPoiMenu.innerHTML = buttons.join("");
     els.quickPoiMenu.style.left = `${clientX}px`;
     els.quickPoiMenu.style.top = `${clientY}px`;
     els.quickPoiMenu.classList.remove("hidden");
-    els.quickPoiMenu.querySelector('[data-action="quick-edit"]').addEventListener("click", () => {
+
+    els.quickPoiMenu.querySelector('[data-action="quick-edit"]')?.addEventListener("click", () => {
       hideQuickPoiMenu();
       showQuickPoiEditor({ mode: "edit", poi });
     });
-    els.quickPoiMenu.querySelector('[data-action="full-edit"]').addEventListener("click", () => {
+    els.quickPoiMenu.querySelector('[data-action="full-edit"]')?.addEventListener("click", () => {
       hideQuickPoiMenu();
       loadPoiIntoForm(poi);
       state.selectedPoiId = poi.id;
       state.selectedBodyId = poi.bodyId;
       setView("admin");
     });
-    els.quickPoiMenu.querySelector('[data-action="delete"]').addEventListener("click", () => {
+    els.quickPoiMenu.querySelector('[data-action="copy"]')?.addEventListener("click", () => {
+      hideQuickPoiMenu();
+      copyPoiToClipboard(poi);
+    });
+    els.quickPoiMenu.querySelector('[data-action="paste"]')?.addEventListener("click", () => {
+      pastePoiFromClipboard(bodyId, coords);
+    });
+    els.quickPoiMenu.querySelector('[data-action="clear-copy"]')?.addEventListener("click", clearPoiClipboard);
+    els.quickPoiMenu.querySelector('[data-action="delete"]')?.addEventListener("click", () => {
       hideQuickPoiMenu();
       if (!confirm(`Delete ${poi.name}?`)) return;
       state.data.pois = state.data.pois.filter(p => p.id !== poi.id);

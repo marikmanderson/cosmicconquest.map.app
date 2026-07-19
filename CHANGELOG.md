@@ -1,5 +1,12 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.4
+- Added POI copy and paste to the Planet Theater right-click menu for Command, Admin, and Root users.
+- Copied POIs retain their type, icon, faction, visibility, strategic/tactical values, display settings, description, and available hidden notes.
+- Right-clicking another valid map or globe location pastes a new independent POI at that coordinate while keeping the clipboard available for repeated placement.
+- Command accounts remain limited to copying and pasting Tactical Point POIs, matching existing shared-atlas permissions.
+- Right-button map panning no longer accidentally opens the POI context menu when the drag ends.
+
 ## v0.5.3
 - Reversed planetary Y grid numbering so Y 01 begins at the bottom edge of every flat map and globe projection.
 - Removed the small Grid Square indicator from the Map Coordinates card and tightened its layout so both blue text lines remain unbroken.
