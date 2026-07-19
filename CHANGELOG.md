@@ -1,5 +1,10 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.5
+- Tactical Points, Exploration Points, and Hazard Zones now use a virtual **None** owner instead of the Neutral / Local faction. Existing matching POIs migrate automatically and remain excluded from faction control.
+- Changed the browser tab title to `Osiris System | Cosmic Conquest`.
+- Changed the visible page title to `Osiris System Map`.
+
 ## v0.5.4
 - Added POI copy and paste to the Planet Theater right-click menu for Command, Admin, and Root users.
 - Copied POIs retain their type, icon, faction, visibility, strategic/tactical values, display settings, description, and available hidden notes.

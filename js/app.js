@@ -11,6 +11,14 @@
     { id: "critical", label: "Critical", value: 10 },
     { id: "decisive", label: "Decisive", value: 15 }
   ];
+  const UNOWNED_POI_OWNER_ID = "none";
+  const UNOWNED_POI_OWNER = Object.freeze({
+    id: UNOWNED_POI_OWNER_ID,
+    code: "NONE",
+    name: "None",
+    color: "#c7d2e0",
+    virtual: true
+  });
   const DEFAULT_PASSWORDS = { command: "", admin: "admin", root: "#RAIDER160%" };
   const DEFAULT_SETTINGS = { disableSatellites: false, disableSatelliteNames: false, disableNames: false, disablePois: false, disablePoiIcons: false, disablePoiRendering: false, poiTypeFilters: {} };
   const ROLE_LABELS = { viewer: "Viewer", command: "Command", admin: "Admin", root: "Root" };
@@ -472,7 +480,7 @@
         const customColor = poiUsesCustomColor(poi.type);
         return {
           ...poi,
-          factionId: customColor ? (clone.factions.some(f => f.id === "neutral") ? "neutral" : clone.factions[0]?.id) : poi.factionId,
+          factionId: customColor ? UNOWNED_POI_OWNER_ID : poi.factionId,
           color: poi.color || (customColor ? "#c7d2e0" : ""),
           strategicValue: customColor ? 0 : Number(poi.strategicValue || 0),
           textSize: clamp(Number(poi.textSize ?? 1), 0.5, 3),
@@ -761,6 +769,7 @@
   }
 
   function factionById(id) {
+    if (id === UNOWNED_POI_OWNER_ID) return UNOWNED_POI_OWNER;
     return state.data.factions.find(faction => faction.id === id) || state.data.factions[0];
   }
 
@@ -4504,6 +4513,10 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }
     const source = state.poiClipboard;
     const pasted = deepClone(source);
+    if (poiUsesCustomColor(pasted.type)) {
+      pasted.factionId = UNOWNED_POI_OWNER_ID;
+      pasted.strategicValue = 0;
+    }
     pasted.id = uuid("poi");
     pasted.bodyId = bodyId;
     pasted.x = clamp(Number(coords.x), 0, 1);
@@ -4601,7 +4614,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.quickPoiName.value = poi?.name || "New Point of Interest";
     els.quickPoiType.value = options.forceType || (state.role === "command" && !isAdmin() ? "tactical" : normalizePoiTypeId(poi?.type || "tactical"));
     refreshIconSelect(els.quickPoiIcon, els.quickPoiType.value, poi?.modelTemplateId || defaultIconForType(els.quickPoiType.value));
-    els.quickPoiOwner.value = poi?.factionId || state.data.factions[0]?.id || "";
+    els.quickPoiOwner.value = poiUsesCustomColor(els.quickPoiType.value)
+      ? (state.data.factions[0]?.id || "")
+      : (poi?.factionId || state.data.factions[0]?.id || "");
     if (els.quickPoiColor) els.quickPoiColor.value = poi?.color || "#c7d2e0";
     els.quickPoiVisibility.value = poi?.visibility || "public";
     els.quickPoiStrategicTier.value = poi?.strategicTier || tierFromValue(Number(poi?.strategicValue ?? 1));
@@ -4640,7 +4655,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       subtype: "",
       modelTemplateId: els.quickPoiIcon.value || defaultIconForType(typeId),
       strategicTier: els.quickPoiStrategicTier.value || tierFromValue(Number(els.quickPoiStrategic.value || 0)),
-      factionId: poiUsesCustomColor(typeId) ? "neutral" : els.quickPoiOwner.value,
+      factionId: poiUsesCustomColor(typeId) ? UNOWNED_POI_OWNER_ID : els.quickPoiOwner.value,
       color: poiUsesCustomColor(typeId) ? (els.quickPoiColor?.value || "#c7d2e0") : "",
       visibility: state.role === "command" && !isAdmin() ? "public" : els.quickPoiVisibility.value,
       strategicValue: poiUsesCustomColor(typeId) ? 0 : clamp(Number(els.quickPoiStrategic.value || 0), 0, 100),
@@ -4759,7 +4774,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       subtype: els.poiSubtype.value.trim(),
       modelTemplateId: els.poiModel.value,
       strategicTier: els.poiStrategicTier.value || tierFromValue(strategicValue),
-      factionId: poiUsesCustomColor(typeId) ? "neutral" : els.poiOwner.value,
+      factionId: poiUsesCustomColor(typeId) ? UNOWNED_POI_OWNER_ID : els.poiOwner.value,
       color: poiUsesCustomColor(typeId) ? (els.poiColor?.value || "#c7d2e0") : "",
       visibility: els.poiVisibility.value,
       strategicValue: poiUsesCustomColor(typeId) ? 0 : clamp(strategicValue, 0, state.role === "pseudo" ? 1 : 100),
@@ -5384,7 +5399,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.poiSubtype.value = poi.subtype || "";
     refreshIconSelect(els.poiModel, els.poiType.value, poi.modelTemplateId || defaultIconForType(els.poiType.value));
     els.poiStrategicTier.value = poi.strategicTier || tierFromValue(Number(poi.strategicValue || 0));
-    els.poiOwner.value = poi.factionId || state.data.factions[0].id;
+    els.poiOwner.value = poiUsesCustomColor(poi.type)
+      ? (state.data.factions[0]?.id || "")
+      : (poi.factionId || state.data.factions[0]?.id || "");
     if (els.poiColor) els.poiColor.value = poi.color || "#c7d2e0";
     els.poiVisibility.value = poi.visibility || "public";
     els.poiStrategic.value = Number(poi.strategicValue || 0);
