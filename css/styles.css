@@ -1649,39 +1649,34 @@ body::after {
 /* v0.5.2 — grid-based planetary coordinate readouts. */
 .planet-coordinate-card {
   margin-top: 14px;
-  padding: 11px 10px;
-  border: 1px solid rgba(109, 247, 255, .22);
-  border-radius: 13px;
+  padding: 9px 10px 10px;
+  border: 1px solid rgba(109, 247, 255, .28);
+  border-radius: 12px;
   background: rgba(5, 18, 31, .82);
 }
 
 .planet-coordinate-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 7px;
+  display: block;
+  margin-bottom: 5px;
 }
 
 .planet-coordinate-heading h3 {
   margin: 0;
-}
-
-.planet-coordinate-heading span {
-  color: rgba(174, 211, 234, .62);
-  font-size: .63rem;
-  letter-spacing: .07em;
-  text-transform: uppercase;
+  font-size: .72rem;
+  letter-spacing: .075em;
+  line-height: 1.1;
   white-space: nowrap;
 }
 
 .planet-coordinate-readout {
   color: var(--cyan);
   font-family: "Arial Narrow", Bahnschrift, sans-serif;
-  font-size: .86rem;
+  font-size: .78rem;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: .045em;
+  line-height: 1.2;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .selected-coordinates {

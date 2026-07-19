@@ -119,7 +119,6 @@
     showHiddenSettingsWrap: document.getElementById("showHiddenSettingsWrap"),
     placementMode: document.getElementById("placementMode"),
     placementReadout: document.getElementById("placementReadout"),
-    planetCoordinateMode: document.getElementById("planetCoordinateMode"),
     planetCoordinateReadout: document.getElementById("planetCoordinateReadout"),
     poiLegend: document.getElementById("poiLegend"),
     controlModePill: document.getElementById("controlModePill"),
@@ -2829,7 +2828,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const nx = clamp(Number(x), 0, 1);
     const ny = clamp(Number(y), 0, 1);
     const column = Math.min(PLANET_GRID_COLUMNS, Math.floor(nx * PLANET_GRID_COLUMNS) + 1);
-    const row = Math.min(PLANET_GRID_ROWS, Math.floor(ny * PLANET_GRID_ROWS) + 1);
+    // Map-space Y increases downward, but conventional planetary grid coordinates count upward
+    // from the southern/bottom edge. Y 01 is therefore the bottom grid row.
+    const row = Math.min(PLANET_GRID_ROWS - 1, Math.floor((1 - ny) * PLANET_GRID_ROWS)) + 1;
     const xLabel = String(column).padStart(2, "0");
     const yLabel = String(row).padStart(2, "0");
     return { x: nx, y: ny, column, row, text: `X ${xLabel} · Y ${yLabel}` };
@@ -2850,14 +2851,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const active = state.planetHoverCoords || state.planetPinnedCoords;
     if (!active) {
       els.planetCoordinateReadout.textContent = "Move the cursor over the map or globe.";
-      if (els.planetCoordinateMode) els.planetCoordinateMode.textContent = "Grid 12 × 6";
       return;
     }
     const formatted = formatPlanetCoordinates(active.x, active.y);
     if (!formatted) return;
     const prefix = state.planetHoverCoords ? "Hover" : "Selected";
     els.planetCoordinateReadout.textContent = `${prefix}: ${formatted.text}`;
-    if (els.planetCoordinateMode) els.planetCoordinateMode.textContent = `Grid square ${formatted.column}/${formatted.row}`;
   }
 
   function setPlanetHoverCoordinates(coords) {

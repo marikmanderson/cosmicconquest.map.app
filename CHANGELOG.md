@@ -1,5 +1,10 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.3
+- Reversed planetary Y grid numbering so Y 01 begins at the bottom edge of every flat map and globe projection.
+- Removed the small Grid Square indicator from the Map Coordinates card and tightened its layout so both blue text lines remain unbroken.
+- Added dedicated ICO, 32 px PNG, and Apple touch favicon files using the GAR/Republic emblem shown in the Atlas header.
+
 ## v0.5.2
 - Added Hidden Notes editing to the Admin Quick Edit POI dialog without exposing the field to Command accounts.
 - Added live 12 × 6 grid coordinates for Flat Map and Globe View hover/click positions.
