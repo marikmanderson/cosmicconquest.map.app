@@ -195,9 +195,20 @@
                 <label>Name<input id="factionName" placeholder="Example: Republic Loyalist Cells" /></label>
                 <label>Short Code<input id="factionCode" placeholder="rlc" /></label>
                 <label>Color<input id="factionColor" type="color" value="#58a6ff" /></label>
+                <label class="checkbox-row faction-hidden-toggle"><input id="factionHidden" type="checkbox" /> Hidden faction <span>Its holdings appear Neutral on the public map and control displays.</span></label>
                 <button class="primary-button" type="submit">Save Faction</button>
               </form>
               <div id="factionList" class="record-list"></div>
+              <section id="factionHoldingsPanel" class="faction-holdings-panel hidden">
+                <div class="section-header compact-header">
+                  <div>
+                    <p class="eyebrow">Controlled Assets</p>
+                    <h3 id="factionHoldingsTitle">Faction Holdings</h3>
+                  </div>
+                </div>
+                <p id="factionHoldingsSummary" class="form-note"></p>
+                <div id="factionHoldingsList" class="faction-holdings-list"></div>
+              </section>
               <section class="faction-merge-panel">
                 <h3>Merge Factions</h3>
                 <p class="form-note">Transfers every mapped POI and celestial-body control percentage from the absorbed faction to the receiving faction, then removes the absorbed faction.</p>

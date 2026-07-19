@@ -80,7 +80,8 @@
     hoverSize: { width: 0, height: 0 },
     planetHoverCoords: null,
     planetPinnedCoords: null,
-    poiClipboard: null
+    poiClipboard: null,
+    selectedAdminFactionId: null
   };
   state.lastSavedJson = JSON.stringify(state.data);
 
@@ -147,7 +148,12 @@
     factionName: document.getElementById("factionName"),
     factionCode: document.getElementById("factionCode"),
     factionColor: document.getElementById("factionColor"),
+    factionHidden: document.getElementById("factionHidden"),
     factionList: document.getElementById("factionList"),
+    factionHoldingsPanel: document.getElementById("factionHoldingsPanel"),
+    factionHoldingsTitle: document.getElementById("factionHoldingsTitle"),
+    factionHoldingsSummary: document.getElementById("factionHoldingsSummary"),
+    factionHoldingsList: document.getElementById("factionHoldingsList"),
     factionMergeSource: document.getElementById("factionMergeSource"),
     factionMergeTarget: document.getElementById("factionMergeTarget"),
     mergeFactionBtn: document.getElementById("mergeFactionBtn"),
@@ -417,7 +423,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.5.0-prototype";
+    clone.meta.version = "0.5.6-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -433,7 +439,10 @@
     clone.factions = mergeByIdPreservingCustomOrder(
       (seed.factions || []).filter(faction => !deletedFactionIds.has(faction.id)),
       (clone.factions || []).filter(faction => !deletedFactionIds.has(faction.id))
-    );
+    ).map(faction => ({ ...faction, hidden: Boolean(faction.hidden) }));
+    const migratedNeutralFactionId = neutralFactionId(clone.factions);
+    const migratedNeutralFaction = clone.factions.find(faction => faction.id === migratedNeutralFactionId);
+    if (migratedNeutralFaction) migratedNeutralFaction.hidden = false;
     clone.bodies = mergeById(
       (seed.bodies || []).filter(body => !deletedBodyIds.has(body.id)),
       (clone.bodies || []).filter(body => !deletedBodyIds.has(body.id))
@@ -471,7 +480,7 @@
         ...poi,
         type: normalizePoiTypeId(poi.type),
         visibility: normalizeVisibility(poi.visibility),
-        factionId: clone.factions.some(f => f.id === poi.factionId) ? poi.factionId : clone.factions[0]?.id,
+        factionId: clone.factions.some(f => f.id === poi.factionId) ? poi.factionId : migratedNeutralFactionId,
         strategicTier: STRATEGIC_TIERS.some(t => t.id === poi.strategicTier) ? poi.strategicTier : tierFromValue(Number(poi.strategicValue || 0)),
         x: clamp(Number(poi.x ?? .5), 0, 1),
         y: clamp(Number(poi.y ?? .5), 0, 1)
@@ -768,9 +777,38 @@
     return state.data.bodies.find(bodyHasTheater) || state.data.bodies.find(body => body.type === "planet");
   }
 
+  function neutralFaction(factions = state.data.factions) {
+    const list = Array.isArray(factions) ? factions : [];
+    const exact = list.find(faction => String(faction?.name || "").trim().toLowerCase() === "neutral");
+    const named = list.find(faction => /^neutral(?:\s*\/|\s*$)/i.test(String(faction?.name || "").trim()));
+    return exact || named || list.find(faction => faction?.id === "neutral") || list[0] || null;
+  }
+
+  function neutralFactionId(factions = state.data.factions) {
+    return neutralFaction(factions)?.id || "";
+  }
+
   function factionById(id) {
     if (id === UNOWNED_POI_OWNER_ID) return UNOWNED_POI_OWNER;
-    return state.data.factions.find(faction => faction.id === id) || state.data.factions[0];
+    return state.data.factions.find(faction => faction.id === id) || neutralFaction();
+  }
+
+  function displayFactionById(id) {
+    const faction = factionById(id);
+    if (!faction || faction.virtual || !faction.hidden) return faction;
+    return neutralFaction() || faction;
+  }
+
+  function controlFactionId(id) {
+    if (id === UNOWNED_POI_OWNER_ID) return id;
+    const faction = state.data.factions.find(item => item.id === id);
+    const neutral = neutralFaction();
+    return faction?.hidden && neutral ? neutral.id : id;
+  }
+
+  function controlDisplayFactions() {
+    const neutralId = neutralFactionId();
+    return state.data.factions.filter(faction => !faction.hidden || faction.id === neutralId);
   }
 
   function typeById(id) {
@@ -793,7 +831,7 @@
 
   function poiRenderColor(poi) {
     if (poiUsesCustomColor(poi.type)) return poi.color || "#c7d2e0";
-    return factionById(poi.factionId)?.color || "#c7d2e0";
+    return displayFactionById(poi.factionId)?.color || "#c7d2e0";
   }
 
   function poisForBody(bodyId, opts = {}) {
@@ -3965,7 +4003,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function poiHoverHtml(poi) {
     const body = bodyById(poi.bodyId);
-    const faction = factionById(poi.factionId);
+    const faction = displayFactionById(poi.factionId);
     const type = typeById(poi.type);
     return `
       <h3>${escapeHtml(poi.name)}</h3>
@@ -3999,7 +4037,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function showDetailForPoi(poi) {
     const body = bodyById(poi.bodyId);
     const type = typeById(poi.type);
-    const faction = factionById(poi.factionId);
+    const faction = displayFactionById(poi.factionId);
     const template = templateById(poi.modelTemplateId);
     const sector = state.data.sectors.find(s => s.id === poi.sectorId);
     const staffNotes = isGmPlus() && poi.gmNotes ? `<p><strong>GM Notes:</strong> ${escapeHtml(poi.gmNotes)}</p>` : "";
@@ -4038,7 +4076,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const actual = currentIntelIsActual();
     const control = calculateSystemControl(actual);
     els.controlModePill.textContent = roleLabel();
-    els.systemControlBars.innerHTML = state.data.factions.map(faction => {
+    els.systemControlBars.innerHTML = controlDisplayFactions().map(faction => {
       const score = control.scores[faction.id] || 0;
       const pct = control.total ? score / control.total * 100 : 0;
       return `
@@ -4060,12 +4098,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const poi of state.data.pois) {
       if (overriddenBodies.has(poi.bodyId) || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
-      scores[poi.factionId] = (scores[poi.factionId] || 0) + val;
+      const ownerId = controlFactionId(poi.factionId);
+      scores[ownerId] = (scores[ownerId] || 0) + val;
       total += val;
     }
     for (const bonus of calculateSectorBonuses(actual)) {
       if (overriddenBodies.has(bonus.bodyId)) continue;
-      scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
+      const ownerId = controlFactionId(bonus.factionId);
+      scores[ownerId] = (scores[ownerId] || 0) + bonus.value;
       total += bonus.value;
     }
     for (const body of state.data.bodies) {
@@ -4091,12 +4131,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const poi of state.data.pois) {
       if (poi.bodyId !== bodyId || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
-      scores[poi.factionId] = (scores[poi.factionId] || 0) + val;
+      const ownerId = controlFactionId(poi.factionId);
+      scores[ownerId] = (scores[ownerId] || 0) + val;
       total += val;
     }
     for (const bonus of calculateSectorBonuses(actual)) {
       if (bonus.bodyId !== bodyId) continue;
-      scores[bonus.factionId] = (scores[bonus.factionId] || 0) + bonus.value;
+      const ownerId = controlFactionId(bonus.factionId);
+      scores[ownerId] = (scores[ownerId] || 0) + bonus.value;
       total += bonus.value;
     }
     for (const child of state.data.bodies) {
@@ -4134,7 +4176,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
       let totalValue = 0;
       for (const poi of sectorPois) {
         const value = Number(poi.strategicValue || 0);
-        byFaction.set(poi.factionId, (byFaction.get(poi.factionId) || 0) + value);
+        const ownerId = controlFactionId(poi.factionId);
+        byFaction.set(ownerId, (byFaction.get(ownerId) || 0) + value);
         totalValue += value;
       }
       if (!totalValue) continue;
@@ -4151,7 +4194,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
   function dominantFaction(scores) {
     let best = null;
-    for (const faction of state.data.factions) {
+    for (const faction of controlDisplayFactions()) {
       const value = scores[faction.id] || 0;
       if (!best || value > best.value) best = { id: faction.id, code: faction.code, value };
     }
@@ -4161,7 +4204,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function factionBreakdownHtml(control) {
     if (!control.total) return `<p><strong>Control:</strong> No strategic value assigned yet.</p>`;
     const manualNote = control.manual ? `<p><strong>Control Source:</strong> Manual celestial-body override.</p>` : "";
-    return `${manualNote}<div class="meta-grid">${state.data.factions.map(faction => {
+    return `${manualNote}<div class="meta-grid">${controlDisplayFactions().map(faction => {
       const value = Number(control.scores[faction.id] || 0);
       const pct = value / control.total * 100;
       const displayValue = Number.isInteger(value) ? value : Math.round(value * 100) / 100;
@@ -4185,7 +4228,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const poi = state.selectedPoiId ? state.data.pois.find(p => p.id === state.selectedPoiId) : null;
     if (poi && canSee(poi)) {
       const type = typeById(poi.type);
-      const faction = factionById(poi.factionId);
+      const faction = displayFactionById(poi.factionId);
       const body = bodyById(poi.bodyId);
       els.selectedTitle.textContent = poi.name;
       setSelectedCoordinates(poi);
@@ -4250,7 +4293,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }
     els.poiList.innerHTML = visiblePois.map(poi => {
       const type = typeById(poi.type);
-      const faction = factionById(poi.factionId);
+      const faction = displayFactionById(poi.factionId);
       const encrypted = poi.visibility === "hidden";
       return `
         <article class="poi-item">
@@ -4283,24 +4326,47 @@ function roundRectPath(ctx, x, y, w, h, r) {
   }
 
   function renderAdminLists() {
-    els.factionList.innerHTML = state.data.factions.map((faction, index) => `
-      <div class="record-item faction-record-item">
-        <span style="display:flex;align-items:center;gap:8px;"><span class="record-swatch" style="color:${faction.color};background:${faction.color}"></span>${escapeHtml(faction.name)}</span>
-        <div class="record-actions">
-          <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="-1" ${index === 0 ? "disabled" : ""} title="Move faction up">↑</button>
-          <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="1" ${index === state.data.factions.length - 1 ? "disabled" : ""} title="Move faction down">↓</button>
-          <button class="ghost-button" type="button" data-edit-faction="${escapeHtml(faction.id)}">Edit</button>
+    if (state.selectedAdminFactionId && !state.data.factions.some(faction => faction.id === state.selectedAdminFactionId)) {
+      state.selectedAdminFactionId = null;
+    }
+    els.factionList.innerHTML = state.data.factions.map((faction, index) => {
+      const holdings = state.data.pois.filter(poi => poi.factionId === faction.id).length;
+      const hiddenTag = faction.hidden ? '<span class="tag faction-hidden-tag">hidden</span>' : '';
+      const selectedClass = state.selectedAdminFactionId === faction.id ? " selected" : "";
+      return `
+        <div class="record-item faction-record-item${selectedClass}">
+          <button class="faction-summary-button" type="button" data-view-faction="${escapeHtml(faction.id)}" title="Show this faction's controlled POIs">
+            <span class="record-swatch" style="color:${faction.color};background:${faction.color}"></span>
+            <span class="faction-summary-copy"><strong>${escapeHtml(faction.name)}</strong><small>${holdings} mapped POI${holdings === 1 ? "" : "s"}</small></span>
+            ${hiddenTag}
+          </button>
+          <div class="record-actions">
+            <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="-1" ${index === 0 ? "disabled" : ""} title="Move faction up">↑</button>
+            <button class="mini-button" type="button" data-move-faction="${escapeHtml(faction.id)}" data-move-direction="1" ${index === state.data.factions.length - 1 ? "disabled" : ""} title="Move faction down">↓</button>
+            <button class="ghost-button" type="button" data-edit-faction="${escapeHtml(faction.id)}">Edit</button>
+          </div>
         </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
+
+    els.factionList.querySelectorAll("button[data-view-faction]").forEach(button => {
+      button.addEventListener("click", () => {
+        state.selectedAdminFactionId = button.dataset.viewFaction;
+        renderAdminLists();
+      });
+    });
 
     els.factionList.querySelectorAll("button[data-edit-faction]").forEach(button => {
       button.addEventListener("click", () => {
-        const faction = factionById(button.dataset.editFaction);
+        const faction = state.data.factions.find(item => item.id === button.dataset.editFaction);
+        if (!faction) return;
+        state.selectedAdminFactionId = faction.id;
         els.factionId.value = faction.id;
         els.factionName.value = faction.name;
         els.factionCode.value = faction.code;
         els.factionColor.value = faction.color;
+        if (els.factionHidden) els.factionHidden.checked = Boolean(faction.hidden);
+        renderFactionHoldings(faction.id);
       });
     });
 
@@ -4308,7 +4374,51 @@ function roundRectPath(ctx, x, y, w, h, r) {
       button.addEventListener("click", () => moveFaction(button.dataset.moveFaction, Number(button.dataset.moveDirection || 0)));
     });
 
+    renderFactionHoldings(state.selectedAdminFactionId);
     renderFactionMergeControls();
+  }
+
+  function renderFactionHoldings(factionId) {
+    if (!els.factionHoldingsPanel || !els.factionHoldingsList) return;
+    const faction = state.data.factions.find(item => item.id === factionId);
+    if (!faction) {
+      els.factionHoldingsPanel.classList.add("hidden");
+      els.factionHoldingsList.innerHTML = "";
+      return;
+    }
+    const holdings = state.data.pois
+      .filter(poi => poi.factionId === faction.id)
+      .sort((a, b) => {
+        const bodyCompare = String(bodyById(a.bodyId)?.name || "").localeCompare(String(bodyById(b.bodyId)?.name || ""));
+        return bodyCompare || Number(b.strategicValue || 0) - Number(a.strategicValue || 0) || String(a.name || "").localeCompare(String(b.name || ""));
+      });
+    els.factionHoldingsPanel.classList.remove("hidden");
+    els.factionHoldingsTitle.textContent = `${faction.name} Holdings`;
+    els.factionHoldingsSummary.textContent = holdings.length
+      ? `${holdings.length} mapped POI${holdings.length === 1 ? "" : "s"}. Select one to load it directly into the POI Editor.`
+      : "This faction currently controls no mapped POIs.";
+    els.factionHoldingsList.innerHTML = holdings.map(poi => {
+      const body = bodyById(poi.bodyId);
+      const type = typeById(poi.type);
+      return `
+        <button class="faction-holding-item" type="button" data-faction-poi="${escapeHtml(poi.id)}">
+          <span><strong>${escapeHtml(poi.name)}</strong><small>${escapeHtml(body?.name || "Unknown body")} · ${escapeHtml(type?.label || "POI")}</small></span>
+          <span class="holding-value">${Number(poi.strategicValue || 0)} pts</span>
+        </button>
+      `;
+    }).join("");
+    els.factionHoldingsList.querySelectorAll("button[data-faction-poi]").forEach(button => {
+      button.addEventListener("click", () => {
+        const poi = state.data.pois.find(item => item.id === button.dataset.factionPoi);
+        if (!poi) return;
+        state.selectedPoiId = poi.id;
+        state.selectedTerrainId = null;
+        state.selectedBodyId = poi.bodyId;
+        loadPoiIntoForm(poi);
+        state.planetDirty = true;
+        els.poiForm?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      });
+    });
   }
 
   function renderFactionMergeControls() {
@@ -4372,12 +4482,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
     }
 
     state.data.factions = state.data.factions.filter(faction => faction.id !== source.id);
+    if (state.selectedAdminFactionId === source.id) state.selectedAdminFactionId = target.id;
     state.data.meta ??= {};
     state.data.meta.deletedFactionIds = [...new Set([...(state.data.meta.deletedFactionIds || []), source.id])];
     if (els.factionId.value === source.id) {
       els.factionForm.reset();
       els.factionId.value = "";
       els.factionColor.value = "#58a6ff";
+      if (els.factionHidden) els.factionHidden.checked = false;
     }
     saveData();
     populateStaticControls();
@@ -4615,8 +4727,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
     els.quickPoiType.value = options.forceType || (state.role === "command" && !isAdmin() ? "tactical" : normalizePoiTypeId(poi?.type || "tactical"));
     refreshIconSelect(els.quickPoiIcon, els.quickPoiType.value, poi?.modelTemplateId || defaultIconForType(els.quickPoiType.value));
     els.quickPoiOwner.value = poiUsesCustomColor(els.quickPoiType.value)
-      ? (state.data.factions[0]?.id || "")
-      : (poi?.factionId || state.data.factions[0]?.id || "");
+      ? neutralFactionId()
+      : (poi?.factionId || neutralFactionId());
     if (els.quickPoiColor) els.quickPoiColor.value = poi?.color || "#c7d2e0";
     els.quickPoiVisibility.value = poi?.visibility || "public";
     els.quickPoiStrategicTier.value = poi?.strategicTier || tierFromValue(Number(poi?.strategicValue ?? 1));
@@ -4724,7 +4836,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     refreshIconSelect(els.poiModel, "tactical", defaultIconForType("tactical"));
     els.poiStrategicTier.value = "minor";
     applyTierToInput(els.poiStrategicTier, els.poiStrategic);
-    els.poiOwner.value = state.data.factions[0]?.id || "gar";
+    els.poiOwner.value = neutralFactionId();
     if (els.poiColor) els.poiColor.value = "#c7d2e0";
     els.poiVisibility.value = "public";
     els.poiTactical.value = "1";
@@ -4748,14 +4860,24 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const existing = state.data.factions.find(f => f.id === id);
     state.data.meta ??= {};
     state.data.meta.deletedFactionIds = (state.data.meta.deletedFactionIds || []).filter(deletedId => deletedId !== id);
-    const payload = { id, code, name, color: els.factionColor.value, description: existing?.description || "" };
+    const isNeutral = /^neutral(?:\s*\/|\s*$)/i.test(name);
+    const payload = {
+      id,
+      code,
+      name,
+      color: els.factionColor.value,
+      description: existing?.description || "",
+      hidden: isNeutral ? false : Boolean(els.factionHidden?.checked)
+    };
     if (existing) Object.assign(existing, payload);
     else state.data.factions.push(payload);
+    state.selectedAdminFactionId = id;
     saveData();
     populateStaticControls();
     renderAllPanels();
     els.factionForm.reset();
     els.factionColor.value = "#58a6ff";
+    if (els.factionHidden) els.factionHidden.checked = false;
   }
 
   function onPoiSubmit(event) {
@@ -4995,7 +5117,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const faction of state.data.factions) {
       const pct = clamp(Number(percentages[faction.id] || 0), 0, 100);
       percentTotal += pct;
-      scores[faction.id] = weight * pct / 100;
+      const ownerId = controlFactionId(faction.id);
+      scores[ownerId] = (scores[ownerId] || 0) + weight * pct / 100;
     }
     if (Math.abs(percentTotal - 100) > 0.05) return null;
     return { scores, total: weight, manual: true };
@@ -5400,8 +5523,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
     refreshIconSelect(els.poiModel, els.poiType.value, poi.modelTemplateId || defaultIconForType(els.poiType.value));
     els.poiStrategicTier.value = poi.strategicTier || tierFromValue(Number(poi.strategicValue || 0));
     els.poiOwner.value = poiUsesCustomColor(poi.type)
-      ? (state.data.factions[0]?.id || "")
-      : (poi.factionId || state.data.factions[0]?.id || "");
+      ? neutralFactionId()
+      : (poi.factionId || neutralFactionId());
     if (els.poiColor) els.poiColor.value = poi.color || "#c7d2e0";
     els.poiVisibility.value = poi.visibility || "public";
     els.poiStrategic.value = Number(poi.strategicValue || 0);

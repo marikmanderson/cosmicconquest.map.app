@@ -1686,3 +1686,143 @@ body::after {
   letter-spacing: .06em;
   text-transform: uppercase;
 }
+
+/* v0.5.6 — hidden faction masking and faction holdings browser. */
+.faction-hidden-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid rgba(145,203,255,.14);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+}
+
+.faction-hidden-toggle input {
+  margin-top: 2px;
+}
+
+.faction-hidden-toggle span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.faction-record-item.selected {
+  border-color: rgba(109,247,255,.48);
+  background: rgba(35,102,132,.16);
+}
+
+.faction-summary-button {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.faction-summary-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.faction-summary-copy strong {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.faction-summary-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.faction-hidden-tag {
+  margin-left: auto;
+  color: #ffd47a;
+  border-color: rgba(255,212,122,.28);
+  background: rgba(116,78,12,.18);
+}
+
+.faction-holdings-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(109,247,255,.22);
+  border-radius: 16px;
+  background: rgba(4,24,39,.42);
+}
+
+.compact-header {
+  margin-bottom: 4px;
+}
+
+.faction-holdings-panel h3,
+.faction-holdings-panel p {
+  margin: 0;
+}
+
+.faction-holdings-list {
+  max-height: 320px;
+  margin-top: 10px;
+  display: grid;
+  gap: 7px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.faction-holding-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(145,203,255,.13);
+  border-radius: 11px;
+  background: rgba(255,255,255,.025);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.faction-holding-item:hover {
+  border-color: rgba(109,247,255,.42);
+  background: rgba(109,247,255,.075);
+}
+
+.faction-holding-item > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.faction-holding-item strong,
+.faction-holding-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.faction-holding-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.holding-value {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font: 700 11px/1 "Arial Narrow", Bahnschrift, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}

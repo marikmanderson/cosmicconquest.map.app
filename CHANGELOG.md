@@ -1,5 +1,10 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.6
+- Added a **Hidden faction** setting. Hidden factions remain editable in the Admin Console, but their POIs display as Neutral and their strategic control is combined into the Neutral faction until they are unhidden.
+- Removed first-faction fallback behavior. Neutral ownership is now resolved dynamically from the faction whose name is `Neutral` or begins with `Neutral /`, preventing faction sorting from accidentally making another House the fallback neutral party.
+- Added a clickable faction holdings browser to the Faction Registry. Selecting a faction lists every POI it actually controls and lets Admins load a holding directly into the POI Editor.
+
 ## v0.5.5
 - Tactical Points, Exploration Points, and Hazard Zones now use a virtual **None** owner instead of the Neutral / Local faction. Existing matching POIs migrate automatically and remain excluded from faction control.
 - Changed the browser tab title to `Osiris System | Cosmic Conquest`.
