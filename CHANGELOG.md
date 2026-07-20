@@ -1,5 +1,11 @@
 # Cosmic Conquest Atlas Changelog
 
+## v0.5.7
+- Hidden factions remain masked as Neutral during normal/public intel views.
+- Enabling Hidden Intel now reveals hidden factions in System Control.
+- Hidden-faction POIs immediately restore their true faction name, code, color, and control contribution while Hidden Intel is enabled.
+- Manual celestial-body control overrides and sector bonuses now follow the same revealed-versus-masked intel mode consistently.
+
 ## v0.5.6
 - Added a **Hidden faction** setting. Hidden factions remain editable in the Admin Console, but their POIs display as Neutral and their strategic control is combined into the Neutral faction until they are unhidden.
 - Removed first-faction fallback behavior. Neutral ownership is now resolved dynamically from the faction whose name is `Neutral` or begins with `Neutral /`, preventing faction sorting from accidentally making another House the fallback neutral party.

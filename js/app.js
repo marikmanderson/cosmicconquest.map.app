@@ -423,7 +423,7 @@
   function migrateData(data) {
     const clone = deepClone(data && typeof data === "object" ? data : seed);
     clone.meta ??= {};
-    clone.meta.version = "0.5.6-prototype";
+    clone.meta.version = "0.5.7-prototype";
     clone.meta.deletedBodyIds = Array.isArray(clone.meta.deletedBodyIds)
       ? [...new Set(clone.meta.deletedBodyIds.filter(Boolean))]
       : [];
@@ -795,18 +795,19 @@
 
   function displayFactionById(id) {
     const faction = factionById(id);
-    if (!faction || faction.virtual || !faction.hidden) return faction;
+    if (!faction || faction.virtual || !faction.hidden || currentIntelIsActual()) return faction;
     return neutralFaction() || faction;
   }
 
-  function controlFactionId(id) {
+  function controlFactionId(id, actual = currentIntelIsActual()) {
     if (id === UNOWNED_POI_OWNER_ID) return id;
     const faction = state.data.factions.find(item => item.id === id);
     const neutral = neutralFaction();
-    return faction?.hidden && neutral ? neutral.id : id;
+    return !actual && faction?.hidden && neutral ? neutral.id : id;
   }
 
-  function controlDisplayFactions() {
+  function controlDisplayFactions(actual = currentIntelIsActual()) {
+    if (actual) return state.data.factions;
     const neutralId = neutralFactionId();
     return state.data.factions.filter(faction => !faction.hidden || faction.id === neutralId);
   }
@@ -4076,7 +4077,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const actual = currentIntelIsActual();
     const control = calculateSystemControl(actual);
     els.controlModePill.textContent = roleLabel();
-    els.systemControlBars.innerHTML = controlDisplayFactions().map(faction => {
+    els.systemControlBars.innerHTML = controlDisplayFactions(actual).map(faction => {
       const score = control.scores[faction.id] || 0;
       const pct = control.total ? score / control.total * 100 : 0;
       return `
@@ -4094,22 +4095,22 @@ function roundRectPath(ctx, x, y, w, h, r) {
     if (state.systemControlCache.has(cacheKey)) return state.systemControlCache.get(cacheKey);
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
     let total = 0;
-    const overriddenBodies = new Set(state.data.bodies.filter(body => manualBodyControl(body)).map(body => body.id));
+    const overriddenBodies = new Set(state.data.bodies.filter(body => manualBodyControl(body, actual)).map(body => body.id));
     for (const poi of state.data.pois) {
       if (overriddenBodies.has(poi.bodyId) || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
-      const ownerId = controlFactionId(poi.factionId);
+      const ownerId = controlFactionId(poi.factionId, actual);
       scores[ownerId] = (scores[ownerId] || 0) + val;
       total += val;
     }
     for (const bonus of calculateSectorBonuses(actual)) {
       if (overriddenBodies.has(bonus.bodyId)) continue;
-      const ownerId = controlFactionId(bonus.factionId);
+      const ownerId = controlFactionId(bonus.factionId, actual);
       scores[ownerId] = (scores[ownerId] || 0) + bonus.value;
       total += bonus.value;
     }
     for (const body of state.data.bodies) {
-      const manual = manualBodyControl(body);
+      const manual = manualBodyControl(body, actual);
       if (!manual) continue;
       for (const faction of state.data.factions) scores[faction.id] = (scores[faction.id] || 0) + Number(manual.scores[faction.id] || 0);
       total += manual.total;
@@ -4123,7 +4124,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     const cacheKey = `${state.dataRevision}:${actual ? 1 : 0}:${bodyId}`;
     if (state.controlCache.has(cacheKey)) return state.controlCache.get(cacheKey);
     const body = bodyById(bodyId);
-    const manual = manualBodyControl(body);
+    const manual = manualBodyControl(body, actual);
     if (manual) { state.controlCache.set(cacheKey, manual); return manual; }
 
     const scores = Object.fromEntries(state.data.factions.map(f => [f.id, 0]));
@@ -4131,19 +4132,19 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const poi of state.data.pois) {
       if (poi.bodyId !== bodyId || (!actual && !canSeeForPublic(poi))) continue;
       const val = Number(poi.strategicValue || 0);
-      const ownerId = controlFactionId(poi.factionId);
+      const ownerId = controlFactionId(poi.factionId, actual);
       scores[ownerId] = (scores[ownerId] || 0) + val;
       total += val;
     }
     for (const bonus of calculateSectorBonuses(actual)) {
       if (bonus.bodyId !== bodyId) continue;
-      const ownerId = controlFactionId(bonus.factionId);
+      const ownerId = controlFactionId(bonus.factionId, actual);
       scores[ownerId] = (scores[ownerId] || 0) + bonus.value;
       total += bonus.value;
     }
     for (const child of state.data.bodies) {
       if (child.parentBodyId !== bodyId) continue;
-      const childManual = manualBodyControl(child);
+      const childManual = manualBodyControl(child, actual);
       if (!childManual) continue;
       for (const faction of state.data.factions) scores[faction.id] = (scores[faction.id] || 0) + Number(childManual.scores[faction.id] || 0);
       total += childManual.total;
@@ -4176,7 +4177,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
       let totalValue = 0;
       for (const poi of sectorPois) {
         const value = Number(poi.strategicValue || 0);
-        const ownerId = controlFactionId(poi.factionId);
+        const ownerId = controlFactionId(poi.factionId, actual);
         byFaction.set(ownerId, (byFaction.get(ownerId) || 0) + value);
         totalValue += value;
       }
@@ -4192,9 +4193,9 @@ function roundRectPath(ctx, x, y, w, h, r) {
     return bonuses;
   }
 
-  function dominantFaction(scores) {
+  function dominantFaction(scores, actual = currentIntelIsActual()) {
     let best = null;
-    for (const faction of controlDisplayFactions()) {
+    for (const faction of controlDisplayFactions(actual)) {
       const value = scores[faction.id] || 0;
       if (!best || value > best.value) best = { id: faction.id, code: faction.code, value };
     }
@@ -4204,7 +4205,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   function factionBreakdownHtml(control) {
     if (!control.total) return `<p><strong>Control:</strong> No strategic value assigned yet.</p>`;
     const manualNote = control.manual ? `<p><strong>Control Source:</strong> Manual celestial-body override.</p>` : "";
-    return `${manualNote}<div class="meta-grid">${controlDisplayFactions().map(faction => {
+    return `${manualNote}<div class="meta-grid">${controlDisplayFactions(currentIntelIsActual()).map(faction => {
       const value = Number(control.scores[faction.id] || 0);
       const pct = value / control.total * 100;
       const displayValue = Number.isInteger(value) ? value : Math.round(value * 100) / 100;
@@ -5108,7 +5109,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     return Boolean(body && body.id);
   }
 
-  function manualBodyControl(body) {
+  function manualBodyControl(body, actual = currentIntelIsActual()) {
     if (!bodySupportsControlOverride(body) || body.controlOverride?.enabled !== true) return null;
     const scores = Object.fromEntries(state.data.factions.map(faction => [faction.id, 0]));
     const weight = Math.max(0, Number(body.strategicWeight || 0));
@@ -5117,7 +5118,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
     for (const faction of state.data.factions) {
       const pct = clamp(Number(percentages[faction.id] || 0), 0, 100);
       percentTotal += pct;
-      const ownerId = controlFactionId(faction.id);
+      const ownerId = controlFactionId(faction.id, actual);
       scores[ownerId] = (scores[ownerId] || 0) + weight * pct / 100;
     }
     if (Math.abs(percentTotal - 100) > 0.05) return null;
